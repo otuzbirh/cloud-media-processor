@@ -1,0 +1,39 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - redis.yaml
+  - minio.yaml
+  - api.yaml
+  - worker.yaml
+  - web.yaml
+configMapGenerator:
+  - name: media-config
+    literals:
+      - REDIS_URL=redis://redis:6379
+      - QUEUE_NAME=image-processing
+      - PENDING_LIST=media-processing:pending
+      - DEPLOYMENT_POLICY=STATIC
+      - BATCHES_INDEX=media:batches
+      - BATCH_RETENTION_SECONDS=604800
+      - WORKER_HEARTBEATS_KEY=media:workers:heartbeats
+      - WORKER_HEARTBEAT_INTERVAL_MS=5000
+      - WORKER_HEARTBEAT_TTL_MS=15000
+      - JOB_METRICS_KEY=media:metrics:jobs
+      - METRIC_RETENTION_MS=604800000
+      - EXPERIMENT_SESSIONS_INDEX=media:experiments:sessions
+      - EXPERIMENT_ACTIVE_SESSIONS_KEY=media:experiments:active
+      - EXPERIMENT_SAMPLE_INTERVAL_MS=5000
+      - WORKER_CAPACITY_COST_PER_MINUTE=
+      - MINIO_ENDPOINT=minio
+      - MINIO_PORT=9000
+      - MINIO_USE_SSL=false
+      - MINIO_INPUT_BUCKET=media-input
+      - MINIO_OUTPUT_BUCKET=media-output
+secretGenerator:
+  - name: media-secrets
+    literals:
+      - MINIO_ACCESS_KEY=mediaadmin
+      - MINIO_SECRET_KEY=replace-before-public-deployment
+      - BENCHMARK_TOKEN=replace-before-public-deployment
+generatorOptions:
+  disableNameSuffixHash: true

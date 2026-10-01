@@ -1,0 +1,96 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        NEXT_PUBLIC_API_URL: /api
+    ports:
+      - "3000:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+    command: ["node", "services/api/index.mjs"]
+    environment: &service-environment
+      REDIS_URL: redis://redis:6379
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: mediaadmin
+      MINIO_SECRET_KEY: mediaadmin123
+      BENCHMARK_TOKEN: local-benchmark-token
+      DEPLOYMENT_POLICY: STATIC
+      BATCHES_INDEX: media:batches
+      BATCH_RETENTION_SECONDS: 604800
+      WORKER_HEARTBEATS_KEY: media:workers:heartbeats
+      WORKER_HEARTBEAT_INTERVAL_MS: 5000
+      WORKER_HEARTBEAT_TTL_MS: 15000
+      JOB_METRICS_KEY: media:metrics:jobs
+      METRIC_RETENTION_MS: 604800000
+      EXPERIMENT_SESSIONS_INDEX: media:experiments:sessions
+      EXPERIMENT_ACTIVE_SESSIONS_KEY: media:experiments:active
+      EXPERIMENT_SAMPLE_INTERVAL_MS: 5000
+      WORKER_CAPACITY_COST_PER_MINUTE: ${WORKER_CAPACITY_COST_PER_MINUTE:-}
+    ports:
+      - "4000:4000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+    command: ["node", "services/worker/index.mjs"]
+    environment:
+      <<: *service-environment
+      WORKER_CONCURRENCY: 1
+      METRICS_PORT: 9091
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  redis:
+    image: redis:8.2-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 2s
+      retries: 15
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: mediaadmin
+      MINIO_ROOT_PASSWORD: mediaadmin123
+    ports:
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 3s
+      timeout: 2s
+      retries: 15
+
+volumes:
+  redis-data:
+  minio-data:

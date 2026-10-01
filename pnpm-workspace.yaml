@@ -1,0 +1,14 @@
+packages:
+  - .
+  - services
+
+allowBuilds:
+  esbuild: true
+  fsevents: true
+  msgpackr-extract: true
+  sharp: true
+  unrs-resolver: true
+  workerd: true
+cacheDir: ${SITES_PNPM_SHARED_STORE:-.sites-runtime/pnpm-store}/policy-cache
+packageImportMethod: clone-or-copy
+storeDir: ${SITES_PNPM_SHARED_STORE:-.sites-runtime/pnpm-store}
