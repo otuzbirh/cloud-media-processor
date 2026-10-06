@@ -16,8 +16,11 @@ configMapGenerator:
       - BATCHES_INDEX=media:batches
       - BATCH_RETENTION_SECONDS=604800
       - WORKER_HEARTBEATS_KEY=media:workers:heartbeats
+      - WORKER_DETAILS_KEY=media:workers:details
       - WORKER_HEARTBEAT_INTERVAL_MS=5000
       - WORKER_HEARTBEAT_TTL_MS=15000
+      - WORKER_CPU_REQUEST_MILLICORES=500
+      - WORKER_MEMORY_REQUEST_MIB=256
       - JOB_METRICS_KEY=media:metrics:jobs
       - METRIC_RETENTION_MS=604800000
       - EXPERIMENT_SESSIONS_INDEX=media:experiments:sessions

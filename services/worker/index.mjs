@@ -15,9 +15,33 @@ const processedJobs = new Counter({ name: "media_worker_jobs_total", help: "Broj
 const activeJobs = new Gauge({ name: "media_worker_active_jobs", help: "Broj aktivnih poslova", registers: [registry] });
 const processingDuration = new Histogram({ name: "media_worker_processing_seconds", help: "Trajanje obrade fotografije", buckets: [0.1, 0.25, 0.5, 1, 2, 5, 10, 20], registers: [registry] });
 const workerId = process.env.WORKER_INSTANCE_ID ?? process.env.HOSTNAME ?? randomUUID();
+let previousCpu = process.cpuUsage();
+let previousHeartbeatAt = process.hrtime.bigint();
+let heartbeatRunning = false;
 
 async function heartbeat() {
-  await redis.zadd(config.workersKey, Date.now(), workerId);
+  if (heartbeatRunning) return;
+  heartbeatRunning = true;
+  try {
+    const now = Date.now();
+    const currentHeartbeatAt = process.hrtime.bigint();
+    const elapsedMicroseconds = Number(currentHeartbeatAt - previousHeartbeatAt) / 1000;
+    const cpu = process.cpuUsage(previousCpu);
+    const cpuPercent = elapsedMicroseconds > 0 ? ((cpu.user + cpu.system) / elapsedMicroseconds) * 100 : 0;
+    previousCpu = process.cpuUsage();
+    previousHeartbeatAt = currentHeartbeatAt;
+    const details = JSON.stringify({
+      timestamp: now,
+      cpuPercent,
+      memoryBytes: process.memoryUsage().rss,
+    });
+    await redis.multi()
+      .zadd(config.workersKey, now, workerId)
+      .hset(config.workerDetailsKey, workerId, details)
+      .exec();
+  } finally {
+    heartbeatRunning = false;
+  }
 }
 
 await heartbeat();
@@ -140,7 +164,7 @@ async function shutdown() {
   clearInterval(heartbeatTimer);
   metricsServer.close();
   await worker.close();
-  await redis.zrem(config.workersKey, workerId);
+  await redis.multi().zrem(config.workersKey, workerId).hdel(config.workerDetailsKey, workerId).exec();
   await redis.quit();
   process.exit(0);
 }

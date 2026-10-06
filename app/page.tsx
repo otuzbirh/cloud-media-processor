@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Clock3,
   CloudUpload,
+  Cpu,
   Download,
   ExternalLink,
   FileArchive,
@@ -17,6 +18,7 @@ import {
   ImageIcon,
   Layers3,
   LoaderCircle,
+  MemoryStick,
   Play,
   RefreshCw,
   RotateCcw,
@@ -81,14 +83,22 @@ type BatchSummary = Omit<ApiBatch, "jobs">;
 
 type Metrics = {
   timestamp: number;
-  deploymentPolicy: "STATIC" | "DYNAMIC";
+  deploymentPolicy: "STATIC" | "CPU_HPA" | "QUEUE_KEDA";
   queueLength: number;
   activeJobs: number;
   activeWorkers: number;
+  averageWorkerCpuPercent: number;
+  averageWorkerMemoryBytes: number;
+  totalWorkerMemoryBytes: number;
+  workerCpuRequestMillicores: number;
+  workerMemoryRequestMiB: number;
+  allocatedCpuCores: number;
+  allocatedMemoryMiB: number;
   completedJobs: number;
   failedJobs: number;
   throughputLast60Seconds: number;
   averageProcessingMs: number;
+  medianProcessingMs: number;
   p95ProcessingMs: number;
   averageQueueWaitMs: number;
   processedBytes: number;
@@ -98,6 +108,8 @@ type SessionSummary = {
   durationMs: number;
   sampleCount: number;
   workerMinutes: number;
+  cpuRequestCoreMinutes: number;
+  memoryRequestMiBMinutes: number;
   estimatedAllocatedCapacityCost: number | null;
   averageQueueLength: number;
   maximumQueueLength: number;
@@ -105,14 +117,28 @@ type SessionSummary = {
   maximumWorkers: number;
   averageThroughput: number;
   averageProcessingMs: number;
+  medianProcessingMs: number;
   p95ProcessingMs: number;
+  averageWorkerCpuPercent: number;
+  maximumWorkerCpuPercent: number;
+  averageWorkerMemoryMiB: number;
+  maximumWorkerMemoryMiB: number;
+  averageCapacityUtilizationPercent: number;
+  completedJobs: number;
+  failedJobs: number;
+  processedBytes: number;
+  jobsPerWorkerMinute: number;
+  processedMiBPerWorkerMinute: number;
+  scalingActions: number;
+  scalingOscillations: number;
+  scaleUpReactionMs: number | null;
 };
 
 type ExperimentSession = {
   id: string;
   name: string;
   workloadProfile: string;
-  deploymentPolicy: "STATIC" | "DYNAMIC";
+  deploymentPolicy: "STATIC" | "CPU_HPA" | "QUEUE_KEDA";
   status: "active" | "completed";
   startedAt: number;
   endedAt: number | null;
@@ -139,6 +165,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
 const PROFILE_LABELS: Record<string, string> = { webshop: "Web shop", blog: "Blog", social: "Društvene mreže", custom: "Prilagođene postavke", benchmark: "Benchmark" };
+const POLICY_LABELS: Record<Metrics["deploymentPolicy"], string> = { STATIC: "S0 STATIČKA", CPU_HPA: "S1 CPU HPA", QUEUE_KEDA: "S2 RED / KEDA" };
 const PROFILE_OPTIONS: Record<string, ProcessingOptions> = {
   webshop: { format: "webp", quality: 82, width: 1600, keepAspectRatio: true, thumbnailEnabled: true, thumbnailWidth: 320, stripMetadata: true, watermarkEnabled: false, watermarkText: "", watermarkPosition: "southeast", watermarkOpacity: 0.35 },
   blog: { format: "webp", quality: 78, width: 1400, keepAspectRatio: true, thumbnailEnabled: true, thumbnailWidth: 400, stripMetadata: true, watermarkEnabled: false, watermarkText: "", watermarkPosition: "southeast", watermarkOpacity: 0.35 },
@@ -507,11 +534,12 @@ function HistoryView({ batches, loading, onOpen, onRefresh }: { batches: BatchSu
 function ExperimentView({ activeSession, metrics, sessionName, sessions, workloadProfile, onLoadSession, onSessionName, onStart, onStop, onWorkloadProfile }: { activeSession: ExperimentSession | null; metrics: Metrics | null; sessionName: string; sessions: ExperimentSession[]; workloadProfile: string; onLoadSession: (id: string) => void; onSessionName: (value: string) => void; onStart: () => void; onStop: () => void; onWorkloadProfile: (value: string) => void }) {
   const running = activeSession?.status === "active";
   const samples = activeSession?.samples ?? [];
-  return <section className="mx-auto max-w-[1416px] space-y-6 px-5 py-7 lg:px-8"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="mb-1 text-xs font-bold uppercase tracking-[0.14em] text-[#228666]">Stvarni podaci sistema</p><h1 className="text-2xl font-bold sm:text-[30px]">Eksperimentalni dashboard</h1><p className="mt-2 text-sm text-[#66766f]">Vrijednosti dolaze iz Redis reda, BullMQ događaja i heartbeat zapisa aktivnih workera.</p></div><span className={`rounded-lg px-3 py-2 text-xs font-bold ${metrics?.deploymentPolicy === "DYNAMIC" ? "bg-[#dff3ea] text-[#176b51]" : "bg-[#e8ecef] text-[#43515b]"}`}>POLITIKA: {metrics?.deploymentPolicy ?? "-"}</span></div>
+  const summary = activeSession?.summary;
+  return <section className="mx-auto max-w-[1416px] space-y-6 px-5 py-7 lg:px-8"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="mb-1 text-xs font-bold uppercase tracking-[0.14em] text-[#228666]">Stvarni podaci sistema</p><h1 className="text-2xl font-bold sm:text-[30px]">Eksperimentalni dashboard</h1><p className="mt-2 text-sm text-[#66766f]">Vrijednosti dolaze iz Redis reda, BullMQ događaja i heartbeat zapisa aktivnih workera.</p></div><span className={`rounded-lg px-3 py-2 text-xs font-bold ${metrics?.deploymentPolicy === "STATIC" ? "bg-[#e8ecef] text-[#43515b]" : "bg-[#dff3ea] text-[#176b51]"}`}>POLITIKA: {metrics ? POLICY_LABELS[metrics.deploymentPolicy] : "-"}</span></div>
 
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><MetricCard icon={<Clock3 size={17} />} label="Dužina reda" value={String(metrics?.queueLength ?? "-")} /><MetricCard icon={<Activity size={17} />} label="Aktivni poslovi" value={String(metrics?.activeJobs ?? "-")} /><MetricCard icon={<Users size={17} />} label="Aktivni workeri" value={String(metrics?.activeWorkers ?? "-")} /><MetricCard icon={<Gauge size={17} />} label="Throughput / 60 s" value={String(metrics?.throughputLast60Seconds ?? "-")} /><MetricCard icon={<Check size={17} />} label="Završeni poslovi" value={String(metrics?.completedJobs ?? "-")} /><MetricCard icon={<X size={17} />} label="Neuspješni poslovi" value={String(metrics?.failedJobs ?? "-")} /><MetricCard icon={<Clock3 size={17} />} label="Prosječna obrada" value={formatDuration(metrics?.averageProcessingMs)} /><MetricCard icon={<Gauge size={17} />} label="P95 obrada" value={formatDuration(metrics?.p95ProcessingMs)} /><MetricCard icon={<Clock3 size={17} />} label="Prosječno čekanje" value={formatDuration(metrics?.averageQueueWaitMs)} /><MetricCard icon={<Archive size={17} />} label="Obrađeni podaci" value={metrics ? formatBytes(metrics.processedBytes) : "-"} /></div>
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><MetricCard icon={<Clock3 size={17} />} label="Dužina reda" value={String(metrics?.queueLength ?? "-")} /><MetricCard icon={<Activity size={17} />} label="Aktivni poslovi" value={String(metrics?.activeJobs ?? "-")} /><MetricCard icon={<Users size={17} />} label="Aktivni workeri" value={String(metrics?.activeWorkers ?? "-")} /><MetricCard icon={<Gauge size={17} />} label="Throughput / 60 s" value={String(metrics?.throughputLast60Seconds ?? "-")} /><MetricCard icon={<Cpu size={17} />} label="Prosječni CPU workera" value={metrics ? `${metrics.averageWorkerCpuPercent.toFixed(1)}%` : "-"} /><MetricCard icon={<MemoryStick size={17} />} label="Prosječna memorija workera" value={metrics ? formatBytes(metrics.averageWorkerMemoryBytes) : "-"} /><MetricCard icon={<Cpu size={17} />} label="Alocirani CPU" value={metrics ? `${metrics.allocatedCpuCores.toFixed(2)} jezgri` : "-"} /><MetricCard icon={<MemoryStick size={17} />} label="Alocirana memorija" value={metrics ? `${metrics.allocatedMemoryMiB.toFixed(0)} MiB` : "-"} /><MetricCard icon={<Check size={17} />} label="Završeni poslovi" value={String(metrics?.completedJobs ?? "-")} /><MetricCard icon={<X size={17} />} label="Neuspješni poslovi" value={String(metrics?.failedJobs ?? "-")} /><MetricCard icon={<Clock3 size={17} />} label="Prosječna / P95 obrada" value={metrics ? `${formatDuration(metrics.averageProcessingMs)} / ${formatDuration(metrics.p95ProcessingMs)}` : "-"} /><MetricCard icon={<Clock3 size={17} />} label="Prosječno čekanje" value={formatDuration(metrics?.averageQueueWaitMs)} /><MetricCard icon={<Archive size={17} />} label="Obrađeni podaci" value={metrics ? formatBytes(metrics.processedBytes) : "-"} /></div>
 
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]"><div className="rounded-lg border border-[#dce4e1] bg-white p-5"><div className="mb-4 flex items-center justify-between"><div><h2 className="font-bold">Tekuća sesija</h2><p className="mt-1 text-xs text-[#7a8983]">Queue length, workeri i throughput po uzorku</p></div>{running && <span className="inline-flex items-center gap-2 text-xs font-bold text-[#1d7459]"><span className="h-2 w-2 rounded-full bg-[#31a779]" />AKTIVNA</span>}</div>{samples.length > 1 ? <div className="h-72 w-full"><ResponsiveContainer><LineChart data={samples}><XAxis dataKey="timestamp" tickFormatter={(value) => new Date(value).toLocaleTimeString("bs-BA", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} minTickGap={30} tick={{ fontSize: 11 }} /><YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={32} /><Tooltip labelFormatter={(value) => formatDate(Number(value))} /><Line dataKey="queueLength" name="Red" stroke="#c47a32" strokeWidth={2} dot={false} /><Line dataKey="activeWorkers" name="Workeri" stroke="#228666" strokeWidth={2} dot={false} /><Line dataKey="throughputLast60Seconds" name="Throughput" stroke="#516f9a" strokeWidth={2} dot={false} /></LineChart></ResponsiveContainer></div> : <div className="grid h-72 place-items-center text-center text-sm text-[#78877f]">Pokrenite sesiju da se prikažu stvarni uzorci.</div>}{activeSession?.summary && <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[#e6ece9] pt-4 text-sm"><SummaryValue label="Worker-minute" value={activeSession.summary.workerMinutes.toFixed(2)} /><SummaryValue label="Prosječno workera" value={activeSession.summary.averageWorkers.toFixed(2)} /><SummaryValue label="Maksimalni red" value={activeSession.summary.maximumQueueLength.toFixed(0)} /><SummaryValue label="Procijenjeni trošak alociranog kapaciteta" value={activeSession.summary.estimatedAllocatedCapacityCost === null ? "Stopa nije postavljena" : activeSession.summary.estimatedAllocatedCapacityCost.toFixed(4)} /></div>}</div>
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]"><div className="rounded-lg border border-[#dce4e1] bg-white p-5"><div className="mb-4 flex items-center justify-between"><div><h2 className="font-bold">Tekuća sesija</h2><p className="mt-1 text-xs text-[#7a8983]">Red, workeri i throughput iz stvarnih uzoraka</p></div>{running && <span className="inline-flex items-center gap-2 text-xs font-bold text-[#1d7459]"><span className="h-2 w-2 rounded-full bg-[#31a779]" />AKTIVNA</span>}</div>{samples.length > 1 ? <div className="h-72 w-full"><ResponsiveContainer><LineChart data={samples}><XAxis dataKey="timestamp" tickFormatter={(value) => new Date(value).toLocaleTimeString("bs-BA", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} minTickGap={30} tick={{ fontSize: 11 }} /><YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={32} /><Tooltip labelFormatter={(value) => formatDate(Number(value))} /><Line dataKey="queueLength" name="Red" stroke="#c47a32" strokeWidth={2} dot={false} /><Line dataKey="activeWorkers" name="Workeri" stroke="#228666" strokeWidth={2} dot={false} /><Line dataKey="throughputLast60Seconds" name="Throughput" stroke="#516f9a" strokeWidth={2} dot={false} /></LineChart></ResponsiveContainer></div> : <div className="grid h-72 place-items-center text-center text-sm text-[#78877f]">Pokrenite sesiju da se prikažu stvarni uzorci.</div>}{summary && <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[#e6ece9] pt-4 text-sm sm:grid-cols-3"><SummaryValue label="Worker-minute" value={summary.workerMinutes.toFixed(2)} /><SummaryValue label="CPU request jezgra-minute" value={summary.cpuRequestCoreMinutes.toFixed(2)} /><SummaryValue label="Memorija request MiB-minute" value={summary.memoryRequestMiBMinutes.toFixed(1)} /><SummaryValue label="Poslova / worker-minuti" value={summary.jobsPerWorkerMinute.toFixed(2)} /><SummaryValue label="CPU u odnosu na request" value={`${summary.averageCapacityUtilizationPercent.toFixed(1)}%`} /><SummaryValue label="CPU prosjek / maksimum" value={`${summary.averageWorkerCpuPercent.toFixed(1)}% / ${summary.maximumWorkerCpuPercent.toFixed(1)}%`} /><SummaryValue label="Memorija prosjek / maksimum" value={`${summary.averageWorkerMemoryMiB.toFixed(1)} / ${summary.maximumWorkerMemoryMiB.toFixed(1)} MiB`} /><SummaryValue label="Promjene broja replika" value={String(summary.scalingActions)} /><SummaryValue label="Scale-up reakcija" value={summary.scaleUpReactionMs === null ? "Nije zabilježena" : formatDuration(summary.scaleUpReactionMs)} /><SummaryValue label="Maksimalni red" value={summary.maximumQueueLength.toFixed(0)} /><SummaryValue label="Završeni / neuspješni" value={`${summary.completedJobs} / ${summary.failedJobs}`} /><SummaryValue label="Procijenjeni trošak alociranog kapaciteta" value={summary.estimatedAllocatedCapacityCost === null ? "Stopa nije postavljena" : summary.estimatedAllocatedCapacityCost.toFixed(4)} /></div>}</div>
 
       <div className="space-y-5"><div className="rounded-lg border border-[#dce4e1] bg-white p-5"><h2 className="font-bold">Upravljanje sesijom</h2>{!running ? <div className="mt-4 space-y-4"><Field label="Naziv sesije"><input className="control" maxLength={80} onChange={(event) => onSessionName(event.target.value)} placeholder="Npr. Dynamic ramp 01" value={sessionName} /></Field><Field label="Profil opterećenja"><select className="control" onChange={(event) => onWorkloadProfile(event.target.value)} value={workloadProfile}><option value="low">Low</option><option value="high">High</option><option value="ramp">Ramp</option><option value="spike">Spike</option><option value="custom">Prilagođeni</option></select></Field><button className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#164b3d] text-sm font-bold text-white" onClick={onStart} type="button"><Play size={16} />Pokreni sesiju</button></div> : <div className="mt-4"><p className="text-sm font-bold">{activeSession.name}</p><p className="mt-1 text-xs text-[#77867f]">{activeSession.workloadProfile} · od {formatDate(activeSession.startedAt)}</p><button className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#9b443b] text-sm font-bold text-white" onClick={onStop} type="button"><Square size={15} />Završi sesiju</button></div>}{activeSession && <div className="mt-3 grid grid-cols-2 gap-2"><a className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-[#edf4f1] text-xs font-bold text-[#216f57]" href={`${API_URL}/experiment/sessions/${activeSession.id}/export?format=json`}><Download size={14} />JSON</a><a className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-[#edf4f1] text-xs font-bold text-[#216f57]" href={`${API_URL}/experiment/sessions/${activeSession.id}/export?format=csv`}><Download size={14} />CSV</a></div>}</div>
         <div className="rounded-lg border border-[#dce4e1] bg-white p-5"><h2 className="mb-3 font-bold">Prethodne sesije</h2><div className="max-h-64 divide-y divide-[#edf1ef] overflow-auto">{sessions.length ? sessions.map((session) => <button className="flex w-full items-center justify-between gap-3 py-3 text-left" key={session.id} onClick={() => onLoadSession(session.id)} type="button"><div className="min-w-0"><p className="truncate text-sm font-bold">{session.name}</p><p className="mt-0.5 text-xs text-[#7a8983]">{session.workloadProfile} · {formatDate(session.startedAt)}</p></div><ChevronRight className="shrink-0 text-[#84928c]" size={16} /></button>) : <p className="py-5 text-sm text-[#7a8983]">Još nema sesija.</p>}</div></div></div>

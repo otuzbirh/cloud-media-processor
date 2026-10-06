@@ -2,7 +2,7 @@
 
 Cloud Media Processor je eksperimentalna web aplikacija za batch optimizaciju fotografija. Korisnik učitava JPEG, PNG ili WebP datoteke, bira format, kvalitet i maksimalnu širinu, a obrada se izvršava asinhrono preko reda poslova i skalabilnih worker procesa.
 
-Projekat je namjerno podijeljen na nezavisne komponente kako bi se u magistarskom radu moglo kontrolisano uporediti statičko i dinamičko upravljanje resursima.
+Projekat je namjerno podijeljen na nezavisne komponente kako bi se u magistarskom radu mogla kontrolisano uporediti tri načina alokacije cloud resursa: fiksni broj workera, Kubernetes HPA prema CPU-u i KEDA skaliranje prema aplikacijskoj metrici reda.
 
 ## Funkcionalnosti
 
@@ -19,7 +19,7 @@ Projekat je namjerno podijeljen na nezavisne komponente kako bi se u magistarsko
 - eksperimentalne sesije sa JSON i CSV izvozom;
 - Prometheus metrike za API i workere;
 - poseban benchmark endpoint i k6 profili opterećenja;
-- Kubernetes konfiguracije za statički i dinamički scenarij.
+- Kubernetes konfiguracije za S0 statički, S1 CPU HPA i S2 queue/KEDA scenarij.
 
 ## Arhitektura
 
@@ -31,12 +31,13 @@ flowchart LR
     A --> S["MinIO"]
     R --> P["Image worker"]
     P --> S
-    K["KEDA"] -->|"broj poslova"| P
+    H["HPA"] -->|"CPU"| P
+    K["KEDA"] -->|"broj poslova u redu"| P
 ```
 
 API brzo prihvata zahtjev i stavlja posao u red. CPU-intenzivnu obradu obavlja worker, pa se njegov broj može mijenjati bez skaliranja ostatka sistema. KEDA prati pomoćnu Redis listu `media-processing:pending`, koja sadrži po jedan token za svaki posao koji čeka.
 
-Worker svakih pet sekundi upisuje heartbeat sa svojim instance/pod ID-em. API uklanja istekle zapise i broji samo heartbeat zapise mlađe od `WORKER_HEARTBEAT_TTL_MS`. Završeni poslovi upisuju vremenske i volumenske metrike u Redis, pa dashboard i sesije ne koriste generisane ili hardkodirane rezultate.
+Worker svakih pet sekundi upisuje heartbeat sa svojim instance/pod ID-em, CPU potrošnjom procesa i RSS memorijom. API uklanja istekle zapise i broji samo heartbeat zapise mlađe od `WORKER_HEARTBEAT_TTL_MS`. Završeni poslovi upisuju vremenske i volumenske metrike u Redis, pa dashboard i sesije ne koriste generisane ili hardkodirane rezultate.
 
 ## Lokalno pokretanje
 
@@ -70,7 +71,7 @@ Batch i eksperimentalni podaci se podrazumijevano čuvaju sedam dana. Retencija 
 
 ## Eksperimentalne sesije
 
-Sesija se pokreće iz prikaza Eksperiment uz naziv i profil opterećenja. API periodično čuva queue length, aktivne workere, throughput i latencije. Nakon zaustavljanja dostupni su završni sažetak te JSON i CSV export.
+Sesija se pokreće iz prikaza Eksperiment uz naziv i profil opterećenja. API periodično čuva dužinu reda, aktivne workere, throughput, latencije, CPU/memorijsku potrošnju i alocirani kapacitet. Sažetak računa promjene replika, scale-up reakciju, poslove po worker-minuti te CPU-request i memorija-request minute. Nakon zaustavljanja dostupni su JSON i CSV export.
 
 `workerMinutes` se računa kao vremenski integral broja aktivnih workera. Polje `estimatedAllocatedCapacityCost` postoji samo ako je konfigurisan `WORKER_CAPACITY_COST_PER_MINUTE`; bez provjerljive jedinične stope interfejs prikazuje da stopa nije postavljena. Ova vrijednost se naziva **procijenjeni trošak alociranog kapaciteta**, ne stvarno smanjenje cloud računa.
 
@@ -81,6 +82,8 @@ Ključne varijable okruženja:
 | `DEPLOYMENT_POLICY` | Oznaka aktivne politike | `STATIC` |
 | `WORKER_HEARTBEAT_INTERVAL_MS` | Period upisa heartbeat zapisa | `5000` |
 | `WORKER_HEARTBEAT_TTL_MS` | Maksimalna starost aktivnog workera | `15000` |
+| `WORKER_CPU_REQUEST_MILLICORES` | CPU request jednog workera za obračun kapaciteta | `500` |
+| `WORKER_MEMORY_REQUEST_MIB` | Memorijski request jednog workera za obračun kapaciteta | `256` |
 | `EXPERIMENT_SAMPLE_INTERVAL_MS` | Period uzorkovanja aktivne sesije | `5000` |
 | `BATCH_RETENTION_SECONDS` | Retencija batch historije | `604800` |
 | `METRIC_RETENTION_MS` | Retencija job metrika | `604800000` |
@@ -112,17 +115,23 @@ Statički scenarij koristi šest worker replika:
 kubectl apply -k infra/k8s/static
 ```
 
-Dinamički scenarij koristi KEDA-u i mijenja broj replika od jedne do šest:
+CPU scenarij koristi Kubernetes HPA od jedne do šest replika i cilj od 65% CPU requesta:
+
+```bash
+kubectl apply -k infra/k8s/cpu
+```
+
+Queue scenarij koristi KEDA-u i mijenja broj replika od jedne do šest:
 
 ```bash
 kubectl apply -k infra/k8s/dynamic
 ```
 
-KEDA mora biti instalirana prije dinamičkog scenarija. Oba overlayja su predviđena za dva odvojena klastera/servera; koriste isti NodePort `30080` kako bi pristup aplikaciji bio jednak u oba okruženja.
+Metrics Server mora biti dostupan za CPU HPA, a KEDA prije queue scenarija. Overlayji se pokreću odvojeno i koriste isti NodePort `30080`, kako bi pristup aplikaciji bio jednak.
 
 Prije javnog deploymenta promijenite vrijednosti u `infra/k8s/base/kustomization.yaml` i nemojte objavljivati benchmark endpoint bez sigurnog tokena.
 
-Zajednička Kubernetes baza sadrži identične image verzije, requeste, limite i runtime postavke. Statički overlay postavlja šest replika. Dinamički overlay koristi isti worker Deployment i mijenja samo politiku na `DYNAMIC` te dodaje KEDA `ScaledObject` od jedne do šest replika.
+Zajednička Kubernetes baza sadrži identične image verzije, requeste, limite i runtime postavke. S0 postavlja šest replika, S1 dodaje CPU HPA, a S2 dodaje KEDA `ScaledObject`. Jedina eksperimentalna razlika je politika skaliranja worker Deploymenta.
 
 ## Test opterećenja
 
@@ -135,7 +144,7 @@ BENCHMARK_TOKEN=replace-before-public-deployment \
 k6 run --summary-export=results/ramp-run-01.json tests/load/experiment.js
 ```
 
-Svaki profil treba ponoviti najmanje pet puta za oba scenarija. Redoslijed statičkih i dinamičkih izvođenja treba mijenjati između ponavljanja.
+Svaki profil treba ponoviti najmanje pet puta za sva tri scenarija. Redoslijed S0, S1 i S2 izvođenja treba randomizirati između ponavljanja.
 
 Detaljan postupak nalazi se u [eksperimentalnom protokolu](docs/experiment-protocol.md).
 
@@ -148,7 +157,8 @@ services/worker/        Sharp obrada i worker metrike
 services/shared/        Redis, BullMQ i MinIO konfiguracija
 infra/k8s/base/         zajednički Kubernetes resursi
 infra/k8s/static/       fiksnih šest worker replika
-infra/k8s/dynamic/      KEDA skaliranje od jedne do šest replika
+infra/k8s/cpu/          CPU HPA skaliranje od jedne do šest replika
+infra/k8s/dynamic/      queue/KEDA skaliranje od jedne do šest replika
 tests/load/             k6 profili opterećenja
 tests/unit/             image, polling, validacija i metrički testovi
 docs/                   eksperimentalna dokumentacija

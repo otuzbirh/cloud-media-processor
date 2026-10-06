@@ -2,7 +2,7 @@
 
 ## 1. Cilj
 
-Cilj eksperimenta je uporediti statičku i dinamičku alokaciju worker resursa tokom obrade istog skupa poslova i utvrditi njihov uticaj na aktivirani kapacitet, iskorištenost resursa, protok i vrijeme obrta.
+Cilj eksperimenta je uporediti statičku alokaciju, reaktivno CPU skaliranje i skaliranje prema aplikacijskoj metrici tokom obrade istog skupa poslova te utvrditi njihov uticaj na aktivirani kapacitet, iskorištenost resursa, protok i vrijeme obrta.
 
 ## 2. Hipoteze i operacionalizacija
 
@@ -47,18 +47,23 @@ Izvori aplikacijskih metrika su:
 | dužina reda | Redis lista `media-processing:pending` |
 | aktivni poslovi | BullMQ aktivni poslovi |
 | aktivni workeri | svježi Redis heartbeat zapisi |
+| CPU i memorija workera | CPU vrijeme i RSS memorija worker procesa u heartbeat zapisu |
+| alocirani CPU i memorija | broj svježih workera × Kubernetes resource request jednog workera |
 | završeni/neuspješni poslovi | Redis događaji završetka workera |
 | throughput 60 s | broj uspješnih događaja u posljednjih 60 sekundi |
 | obrada i P95 | trajanje uspješnih worker poslova |
 | čekanje | `processedOn - timestamp` BullMQ posla |
 | obrađeni podaci | zbir glavnih izlaza i thumbnaila |
 
+CPU iskorištenost alociranog kapaciteta računa se kao stvarna prosječna CPU potrošnja worker procesa podijeljena CPU requestom workera. Vrijednost može biti veća od 100% jer je CPU limit namjerno veći od requesta.
+
 ## 3. Nezavisna i zavisne varijable
 
 Jedina namjerno promijenjena nezavisna varijabla je politika alokacije workera:
 
-- statička: šest replika tokom cijelog testa;
-- dinamička: od jedne do šest replika, cilj pet poslova na čekanju po replici.
+- S0 `STATIC`: šest replika tokom cijelog testa;
+- S1 `CPU_HPA`: od jedne do šest replika, cilj 65% iskorištenosti CPU requesta;
+- S2 `QUEUE_KEDA`: od jedne do šest replika, cilj pet poslova na čekanju po replici.
 
 Zavisne varijable su metrike navedene uz H1 i H2. Verzija aplikacije, slike kontejnera, CPU/memorijski requesti i limiti, profil opterećenja, parametri obrade i trajanje testa moraju biti isti.
 
@@ -86,7 +91,7 @@ Vrijednosti su početne i konačno se zaključavaju nakon pilot-testa. Ako oba s
 9. Sačuvati k6 JSON, Prometheus podatke, broj replika i logove grešaka.
 10. Ostaviti period hlađenja prije narednog izvođenja.
 
-Svaki profil se izvodi najmanje pet puta po politici. Preporučeni redoslijed je S-D-D-S-S-D-D-S-D-S, gdje S označava statičko, a D dinamičko okruženje, kako redoslijed ne bi bio povezan s jednom politikom.
+Svaki profil se izvodi najmanje pet puta po politici. Redoslijed S0, S1 i S2 se randomizira ili koristi uravnotežen raspored kako redoslijed izvođenja ne bi bio povezan s jednom politikom.
 
 ## 6. Rezultati za tabelarni prikaz
 
@@ -123,6 +128,7 @@ Dashboard služi za praćenje izvođenja i koristi samo trenutne Redis/BullMQ po
 - MinIO i Redis mogu postati usko grlo nezavisno od workera;
 - vrijeme pokretanja kontejnera zavisi od keširanja imagea;
 - HPA/KEDA smanjuje alocirane pod-resurse, ali fiksno naplaćena VM ne smanjuje automatski stvarni račun;
+- RSS i CPU procesa predstavljaju potrošnju aplikacijskog workera, ne kompletnu potrošnju Kubernetes noda;
 - jedan tip aplikacije ne omogućava generalizaciju na sva cloud opterećenja.
 
 Ograničenja se navode otvoreno i koriste pri formulisanju uslovnog zaključka o hipotezama.

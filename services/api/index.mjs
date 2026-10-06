@@ -10,7 +10,7 @@ import multer from "multer";
 import { Counter, Gauge, Registry, collectDefaultMetrics } from "prom-client";
 import { config } from "../shared/config.mjs";
 import { ensureBuckets, queue, redis, storage } from "../shared/connections.mjs";
-import { freshWorkerIds, summarizeJobEvents, summarizeSession } from "../shared/metrics.mjs";
+import { freshWorkerDetails, summarizeJobEvents, summarizeSession } from "../shared/metrics.mjs";
 import { validatedOptions } from "../shared/options.mjs";
 
 const app = express();
@@ -339,16 +339,26 @@ async function operationalMetrics(now = Date.now()) {
   const [queueLength, activeJobs, workers, rawEvents] = await Promise.all([
     redis.llen(config.pendingList),
     queue.getActiveCount(),
-    freshWorkerIds(redis, config.workersKey, now, config.heartbeatTtlMs),
+    freshWorkerDetails(redis, config.workersKey, config.workerDetailsKey, now, config.heartbeatTtlMs),
     redis.zrangebyscore(config.jobMetricsKey, now - config.metricRetentionMs, now),
   ]);
   const events = rawEvents.map((value) => parseJson(value, null)).filter(Boolean);
+  const average = (values) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+  const workerCpu = workers.map((worker) => worker.cpuPercent).filter(Number.isFinite);
+  const workerMemory = workers.map((worker) => worker.memoryBytes).filter(Number.isFinite);
   return {
     timestamp: now,
     deploymentPolicy: config.deploymentPolicy,
     queueLength,
     activeJobs,
     activeWorkers: workers.length,
+    averageWorkerCpuPercent: average(workerCpu),
+    averageWorkerMemoryBytes: average(workerMemory),
+    totalWorkerMemoryBytes: workerMemory.reduce((sum, value) => sum + value, 0),
+    workerCpuRequestMillicores: config.workerCpuRequestMillicores,
+    workerMemoryRequestMiB: config.workerMemoryRequestMiB,
+    allocatedCpuCores: workers.length * config.workerCpuRequestMillicores / 1000,
+    allocatedMemoryMiB: workers.length * config.workerMemoryRequestMiB,
     ...summarizeJobEvents(events, now),
   };
 }
@@ -454,7 +464,7 @@ app.get("/experiment/sessions/:sessionId/export", async (request, response, next
       response.attachment(`${session.id}.json`).json(session);
       return;
     }
-    const columns = ["timestamp", "deploymentPolicy", "queueLength", "activeJobs", "activeWorkers", "completedJobs", "failedJobs", "throughputLast60Seconds", "averageProcessingMs", "p95ProcessingMs", "averageQueueWaitMs", "processedBytes"];
+    const columns = ["timestamp", "deploymentPolicy", "queueLength", "activeJobs", "activeWorkers", "averageWorkerCpuPercent", "averageWorkerMemoryBytes", "allocatedCpuCores", "allocatedMemoryMiB", "completedJobs", "failedJobs", "throughputLast60Seconds", "averageProcessingMs", "medianProcessingMs", "p95ProcessingMs", "averageQueueWaitMs", "processedBytes"];
     const rows = [columns.join(","), ...session.samples.map((sample) => columns.map((column) => csvValue(sample[column])).join(","))];
     response.attachment(`${session.id}.csv`).type("text/csv").send(`${rows.join("\n")}\n`);
   } catch (error) {
