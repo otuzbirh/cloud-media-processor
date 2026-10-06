@@ -165,7 +165,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
 const PROFILE_LABELS: Record<string, string> = { webshop: "Web shop", blog: "Blog", social: "Društvene mreže", custom: "Prilagođene postavke", benchmark: "Benchmark" };
-const POLICY_LABELS: Record<Metrics["deploymentPolicy"], string> = { STATIC: "S0 STATIČKA", CPU_HPA: "S1 CPU HPA", QUEUE_KEDA: "S2 RED / KEDA" };
+const POLICY_LABELS: Record<Metrics["deploymentPolicy"], string> = { STATIC: "S0 Statička", CPU_HPA: "S1 CPU HPA", QUEUE_KEDA: "S2 Red / KEDA" };
 const PROFILE_OPTIONS: Record<string, ProcessingOptions> = {
   webshop: { format: "webp", quality: 82, width: 1600, keepAspectRatio: true, thumbnailEnabled: true, thumbnailWidth: 320, stripMetadata: true, watermarkEnabled: false, watermarkText: "", watermarkPosition: "southeast", watermarkOpacity: 0.35 },
   blog: { format: "webp", quality: 78, width: 1400, keepAspectRatio: true, thumbnailEnabled: true, thumbnailWidth: 400, stripMetadata: true, watermarkEnabled: false, watermarkText: "", watermarkPosition: "southeast", watermarkOpacity: 0.35 },
@@ -191,7 +191,10 @@ function formatDuration(milliseconds?: number) {
 }
 
 function formatDate(timestamp: number) {
-  return new Intl.DateTimeFormat("bs-BA", { dateStyle: "medium", timeStyle: "short" }).format(timestamp);
+  const date = new Date(timestamp);
+  const months = ["januar", "februar", "mart", "april", "maj", "juni", "juli", "august", "septembar", "oktobar", "novembar", "decembar"];
+  const time = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  return `${date.getDate()}. ${months[date.getMonth()]} ${date.getFullYear()}. u ${time}`;
 }
 
 async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
@@ -418,55 +421,63 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-[#f4f7f6] text-[#17201d]">
-      <header className="sticky top-0 z-30 border-b border-[#dce4e1] bg-[#f8faf9]/95 backdrop-blur">
-        <div className="mx-auto flex min-h-16 max-w-[1480px] flex-wrap items-center justify-between gap-3 px-5 py-2 lg:px-8">
-          <div className="flex items-center gap-3">
-            <div className="grid h-9 w-9 place-items-center rounded-lg bg-[#164b3d] text-white shadow-sm"><Layers3 size={19} /></div>
-            <div><p className="text-[15px] font-bold">Cloud Media Processor</p><p className="text-xs text-[#70807a]">Priprema i eksperimentalna obrada medija</p></div>
+    <main className="app-shell">
+      <header className="app-sidebar">
+        <div className="brand-lockup">
+          <div className="brand-mark" aria-hidden="true"><Layers3 size={20} /></div>
+          <div className="brand-copy"><strong>Cloud Media</strong><span>Processor</span></div>
+        </div>
+        <nav aria-label="Glavna navigacija" className="app-nav">
+          <NavButton active={view === "processing"} icon={<SlidersHorizontal size={18} />} label="Obrada" onClick={() => setView("processing")} />
+          <NavButton active={view === "history"} icon={<History size={18} />} label="Historija" onClick={() => setView("history")} />
+          <NavButton active={view === "experiment"} icon={<Activity size={18} />} label="Eksperiment" onClick={() => setView("experiment")} />
+        </nav>
+        <div className="sidebar-meta">
+          <div className="system-state">
+            <span className={`state-light ${apiOnline === null ? "is-checking" : apiOnline ? "is-online" : "is-offline"}`} />
+            <div><strong>{apiOnline === null ? "Provjera sistema" : apiOnline ? "Sistem dostupan" : "API nije dostupan"}</strong><span>{apiOnline ? "API i red su povezani" : "Provjerite servis na portu 4000"}</span></div>
           </div>
-          <nav aria-label="Glavna navigacija" className="order-3 flex w-full items-center gap-1 rounded-lg bg-[#e9efec] p-1 sm:order-none sm:w-auto">
-            <NavButton active={view === "processing"} icon={<SlidersHorizontal size={15} />} label="Obrada" onClick={() => setView("processing")} />
-            <NavButton active={view === "history"} icon={<History size={15} />} label="Historija" onClick={() => setView("history")} />
-            <NavButton active={view === "experiment"} icon={<Activity size={15} />} label="Eksperiment" onClick={() => setView("experiment")} />
-          </nav>
-          <span className="hidden items-center gap-2 text-xs font-medium text-[#5f7069] md:flex"><span className={`h-2 w-2 rounded-full ${apiOnline === null ? "bg-[#d6a33d]" : apiOnline ? "bg-[#31a779]" : "bg-[#d15f54]"}`} />{apiOnline === null ? "Provjera sistema" : apiOnline ? "Sistem dostupan" : "API nije dostupan"}</span>
+          <p className="sidebar-note">Batch obrada i mjerenje cloud skaliranja u jednom radnom prostoru.</p>
         </div>
       </header>
 
-      {message && <div className="mx-auto mt-5 flex max-w-[1416px] items-start justify-between gap-4 rounded-lg border border-[#efcfc8] bg-[#fff5f2] px-4 py-3 text-sm text-[#9b443b]"><span>{message}</span><button aria-label="Zatvori poruku" onClick={() => setMessage(null)} type="button"><X size={16} /></button></div>}
+      <div className="app-stage">
+        {message && <div className="system-alert" role="alert"><span>{message}</span><button aria-label="Zatvori poruku" onClick={() => setMessage(null)} type="button"><X size={17} /></button></div>}
 
-      {view === "processing" && <ProcessingView
-        batch={currentBatch}
-        batchName={batchName}
-        files={files}
-        isDragging={isDragging}
-        isSubmitting={isSubmitting}
-        options={options}
-        profileModified={profileModified}
-        selectedProfile={selectedProfile}
-        addFiles={addFiles}
-        chooseProfile={chooseProfile}
-        onBatchName={setBatchName}
-        onDragging={setIsDragging}
-        onReset={resetWorkspace}
-        onStart={startProcessing}
-        removeFile={(id) => setFiles((current) => { const removed = current.filter((item) => item.id === id); revokeFiles(removed); return current.filter((item) => item.id !== id); })}
-        updateOption={updateOption}
-      />}
-      {view === "history" && <HistoryView batches={history} loading={historyLoading} onOpen={openBatch} onRefresh={loadHistory} />}
-      {view === "experiment" && <ExperimentView
-        activeSession={activeSession}
-        metrics={metrics}
-        sessionName={sessionName}
-        sessions={sessions}
-        workloadProfile={workloadProfile}
-        onLoadSession={async (id) => setActiveSession(await jsonRequest<ExperimentSession>(`${API_URL}/experiment/sessions/${id}`))}
-        onSessionName={setSessionName}
-        onStart={startSession}
-        onStop={stopSession}
-        onWorkloadProfile={setWorkloadProfile}
-      />}
+        <div className="app-view" key={view}>
+          {view === "processing" && <ProcessingView
+            batch={currentBatch}
+            batchName={batchName}
+            files={files}
+            isDragging={isDragging}
+            isSubmitting={isSubmitting}
+            options={options}
+            profileModified={profileModified}
+            selectedProfile={selectedProfile}
+            addFiles={addFiles}
+            chooseProfile={chooseProfile}
+            onBatchName={setBatchName}
+            onDragging={setIsDragging}
+            onReset={resetWorkspace}
+            onStart={startProcessing}
+            removeFile={(id) => setFiles((current) => { const removed = current.filter((item) => item.id === id); revokeFiles(removed); return current.filter((item) => item.id !== id); })}
+            updateOption={updateOption}
+          />}
+          {view === "history" && <HistoryView batches={history} loading={historyLoading} onOpen={openBatch} onRefresh={loadHistory} />}
+          {view === "experiment" && <ExperimentView
+            activeSession={activeSession}
+            metrics={metrics}
+            sessionName={sessionName}
+            sessions={sessions}
+            workloadProfile={workloadProfile}
+            onLoadSession={async (id) => setActiveSession(await jsonRequest<ExperimentSession>(`${API_URL}/experiment/sessions/${id}`))}
+            onSessionName={setSessionName}
+            onStart={startSession}
+            onStop={stopSession}
+            onWorkloadProfile={setWorkloadProfile}
+          />}
+        </div>
+      </div>
     </main>
   );
 }
@@ -480,54 +491,68 @@ function ProcessingView({ batch, batchName, files, isDragging, isSubmitting, opt
   const handleDrop = (event: DragEvent<HTMLDivElement>) => { event.preventDefault(); onDragging(false); addFiles(Array.from(event.dataTransfer.files)); };
   const rows = batch?.jobs ?? [];
 
-  return <div className="mx-auto grid max-w-[1480px] gap-6 px-5 py-7 lg:grid-cols-[minmax(0,1fr)_370px] lg:px-8">
-    <section className="min-w-0 space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="mb-1 text-xs font-bold uppercase tracking-[0.14em] text-[#228666]">Radni prostor</p><h1 className="text-2xl font-bold sm:text-[30px]">Priprema medija u jednom prolazu</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-[#66766f]">Optimizacija, konverzija, thumbnail, metapodaci i watermark izvršavaju se kao jedan batch pipeline.</p></div>{(files.length > 0 || batch) && <button className="inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-[#607169] hover:bg-[#e8eeeb]" onClick={onReset} type="button"><RotateCcw size={15} />Novi batch</button>}</div>
+  const pipelineStep = batch ? (batch.status === "completed" || batch.status === "failed" ? 4 : 3) : files.length ? 2 : 1;
 
-      {!batch && <div className={`relative overflow-hidden rounded-lg border-2 border-dashed bg-white px-6 py-10 text-center transition sm:py-12 ${isDragging ? "border-[#228666] bg-[#edf8f3]" : "border-[#cfdad6] hover:border-[#9db9ae]"}`} onDragEnter={() => onDragging(true)} onDragLeave={() => onDragging(false)} onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}>
-        <input accept="image/jpeg,image/png,image/webp" aria-label="Odaberi fotografije" className="absolute inset-0 cursor-pointer opacity-0" multiple onChange={handleInput} type="file" />
-        <div className="pointer-events-none mx-auto mb-4 grid h-14 w-14 place-items-center rounded-lg bg-[#e4f2ec] text-[#176c52]"><UploadCloud size={26} /></div><p className="text-base font-bold">Prevucite fotografije ovdje ili kliknite za odabir</p><p className="mt-1.5 text-sm text-[#7b8983]">JPEG, PNG ili WebP · do 30 datoteka · najviše 15 MB po datoteci</p>
+  return <div className="page-frame processing-page">
+    <div className="command-hero">
+      <header className="page-heading">
+        <div><h1>Pripremite novi batch</h1><p>Dodajte fotografije, odaberite izlazne postavke i pokrenite obradu.</p></div>
+        <div className="hero-side">
+          <div className="hero-readout"><span className="hero-pulse" /><div><small>{batch ? batchStatusCopy[batch.status] : files.length ? "Spremno za obradu" : "Pipeline je spreman"}</small><strong>{batch ? `${batch.stats.completed}/${batch.fileCount}` : `${files.length}/30`} datoteka</strong><p>{options.format.toUpperCase()} · {options.width} px · kvalitet {options.quality}%</p></div></div>
+          {(files.length > 0 || batch) && <button className="button hero-action" onClick={onReset} type="button"><RotateCcw size={16} />Novi batch</button>}
+        </div>
+      </header>
+
+      <ol className="pipeline-rail" aria-label="Faze obrade">
+        {["Učitavanje", "Postavke", "Obrada", "Preuzimanje"].map((label, index) => <li className={pipelineStep > index + 1 ? "is-complete" : pipelineStep === index + 1 ? "is-current" : ""} key={label}><span>{pipelineStep > index + 1 ? <Check size={14} /> : index + 1}</span><strong>{label}</strong></li>)}
+      </ol>
+    </div>
+
+    <div className="workspace-grid">
+      <section className="workspace-main">
+      {!batch && <div className={`upload-zone ${isDragging ? "is-dragging" : ""}`} onDragEnter={() => onDragging(true)} onDragLeave={() => onDragging(false)} onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}>
+        <input accept="image/jpeg,image/png,image/webp" aria-label="Odaberi fotografije" multiple onChange={handleInput} type="file" />
+        <div className="upload-icon"><UploadCloud size={27} /></div><div><p>Prevucite fotografije ili odaberite datoteke</p><span>JPEG, PNG ili WebP · najviše 30 datoteka · 15 MB po datoteci</span></div>
       </div>}
 
-      <div className="overflow-hidden rounded-lg border border-[#dce4e1] bg-white shadow-[0_10px_30px_rgba(30,60,50,0.04)]">
-        <div className="flex items-center justify-between border-b border-[#e4eae7] px-5 py-4"><div><h2 className="font-bold">{batch?.name ?? "Datoteke za obradu"}</h2><p className="mt-0.5 text-xs text-[#7a8983]">{batch ? `${batch.fileCount} datoteka · ${batchStatusCopy[batch.status]}` : `${files.length} od 30 datoteka`}</p></div>{batch?.downloadUrl && <a className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#e9f4ef] px-3 text-sm font-bold text-[#1d7459]" href={`${API_URL}${batch.downloadUrl}`}><FileArchive size={16} />ZIP</a>}</div>
-        {!batch && files.length === 0 ? <div className="grid min-h-44 place-items-center px-6 py-10 text-center"><div><ImageIcon className="mx-auto mb-3 text-[#a9b8b2]" size={26} /><p className="text-sm font-semibold text-[#596a63]">Odabrane fotografije će se pojaviti ovdje</p></div></div> :
-          <div className="divide-y divide-[#edf1ef]">{batch ? rows.map((job) => <JobRow job={job} key={job.id} />) : files.map((item) => <div className="grid grid-cols-[48px_minmax(0,1fr)_auto] items-center gap-4 px-5 py-3.5" key={item.id}>
+      <div className="surface file-surface">
+        <div className="surface-header"><div><h2>{batch?.name ?? "Datoteke za obradu"}</h2><p>{batch ? `${batch.fileCount} datoteka · ${batchStatusCopy[batch.status]}` : `${files.length} od 30 datoteka`}</p></div>{batch?.downloadUrl && <a className="button button-secondary" href={`${API_URL}${batch.downloadUrl}`}><FileArchive size={16} />Preuzmi ZIP</a>}</div>
+        {!batch && files.length === 0 ? <div className="empty-state"><ImageIcon size={28} /><p>Datoteke koje odaberete pojavit će se ovdje.</p><span>Možete ih ukloniti prije pokretanja obrade.</span></div> :
+          <div className="file-list">{batch ? rows.map((job) => <JobRow job={job} key={job.id} />) : files.map((item) => <div className="file-row" key={item.id}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img alt="" className="h-12 w-12 rounded-lg bg-[#eef2f0] object-cover" src={item.preview} /><div className="min-w-0"><p className="truncate text-sm font-bold">{item.file.name}</p><p className="mt-1 text-xs text-[#7a8983]">{formatBytes(item.file.size)}</p></div><button aria-label={`Ukloni ${item.file.name}`} className="grid h-9 w-9 place-items-center rounded-lg text-[#89968f] hover:bg-[#fff0ed] hover:text-[#a94c43]" onClick={() => removeFile(item.id)} type="button"><Trash2 size={16} /></button></div>)}</div>}
+            <img alt="" src={item.preview} /><div className="file-copy"><p>{item.file.name}</p><span>{formatBytes(item.file.size)}</span></div><button aria-label={`Ukloni ${item.file.name}`} className="icon-button is-danger" onClick={() => removeFile(item.id)} type="button"><Trash2 size={17} /></button></div>)}</div>}
       </div>
 
-      {batch && <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"><MetricCard icon={<Archive size={17} />} label="Ulazni podaci" value={formatBytes(batch.stats.inputBytes)} /><MetricCard icon={<Download size={17} />} label="Izlazni podaci" value={formatBytes(batch.stats.outputBytes)} /><MetricCard icon={<Sparkles size={17} />} label="Ušteda prostora" value={`${batch.stats.savingsPercent}%`} /><MetricCard icon={<Clock3 size={17} />} label="Trajanje batcha" value={formatDuration(batch.stats.durationMs)} /><MetricCard icon={<Gauge size={17} />} label="Prosječna obrada" value={formatDuration(batch.stats.averageProcessingMs)} /><MetricCard icon={<X size={17} />} label="Greške" value={String(batch.stats.failed)} /></div>}
-    </section>
+      {batch && <div className="metric-ribbon"><MetricCard icon={<Archive size={17} />} label="Ulaz" value={formatBytes(batch.stats.inputBytes)} /><MetricCard icon={<Download size={17} />} label="Izlaz" value={formatBytes(batch.stats.outputBytes)} /><MetricCard icon={<Sparkles size={17} />} label="Ušteda" value={`${batch.stats.savingsPercent}%`} /><MetricCard icon={<Clock3 size={17} />} label="Trajanje" value={formatDuration(batch.stats.durationMs)} /><MetricCard icon={<Gauge size={17} />} label="Prosjek" value={formatDuration(batch.stats.averageProcessingMs)} /><MetricCard icon={<X size={17} />} label="Greške" value={String(batch.stats.failed)} /></div>}
+      </section>
 
-    <aside className="space-y-5 lg:sticky lg:top-[88px] lg:self-start">
-      <div className="rounded-lg border border-[#dce4e1] bg-white p-5 shadow-[0_10px_30px_rgba(30,60,50,0.04)]">
-        <div className="mb-5 flex items-center gap-3"><div className="grid h-9 w-9 place-items-center rounded-lg bg-[#edf4f1] text-[#286d58]"><ServerCog size={18} /></div><div><h2 className="font-bold">Postavke pipelinea</h2><p className="text-xs text-[#7b8983]">Primjenjuju se na cijeli batch</p></div></div>
-        <div className="space-y-4">
+    <aside className="settings-panel surface">
+        <div className="surface-header settings-heading"><div><h2>Postavke pipelinea</h2><p>Primjenjuju se na cijeli batch</p></div><ServerCog size={19} /></div>
+        <div className="settings-form">
           <Field label="Naziv batcha"><input className="control" disabled={Boolean(batch)} maxLength={80} onChange={(event) => onBatchName(event.target.value)} placeholder="Npr. Proizvodi - septembar" value={batchName} /></Field>
           <Field label={`Profil${profileModified ? " · izmijenjen" : ""}`}><select className="control" disabled={Boolean(batch)} onChange={(event) => chooseProfile(event.target.value)} value={selectedProfile}><option value="webshop">Web shop</option><option value="blog">Blog</option><option value="social">Društvene mreže</option><option value="custom">Prilagođene postavke</option></select></Field>
-          <div className="grid grid-cols-2 gap-3"><Field label="Format"><select className="control" disabled={Boolean(batch)} onChange={(event) => updateOption("format", event.target.value as ProcessingOptions["format"])} value={options.format}><option value="webp">WebP</option><option value="jpeg">JPEG</option><option value="png">PNG</option></select></Field><Field label="Širina"><input className="control" disabled={Boolean(batch)} max={8000} min={200} onChange={(event) => updateOption("width", Number(event.target.value))} type="number" value={options.width} /></Field></div>
+          <div className="field-pair"><Field label="Format"><select className="control" disabled={Boolean(batch)} onChange={(event) => updateOption("format", event.target.value as ProcessingOptions["format"])} value={options.format}><option value="webp">WebP</option><option value="jpeg">JPEG</option><option value="png">PNG</option></select></Field><Field label="Širina"><input className="control" disabled={Boolean(batch)} max={8000} min={200} onChange={(event) => updateOption("width", Number(event.target.value))} type="number" value={options.width} /></Field></div>
           <Field label={`Kvalitet · ${options.quality}%`}><input aria-label="Kvalitet slike" className="range-control w-full" disabled={Boolean(batch)} max={95} min={35} onChange={(event) => updateOption("quality", Number(event.target.value))} type="range" value={options.quality} /></Field>
           <Toggle checked={options.keepAspectRatio} disabled={Boolean(batch)} label="Zadrži proporcije" onChange={(value) => updateOption("keepAspectRatio", value)} />
           <Toggle checked={options.thumbnailEnabled} disabled={Boolean(batch)} label="Generiši thumbnail" onChange={(value) => updateOption("thumbnailEnabled", value)} />
           {options.thumbnailEnabled && <Field label="Širina thumbnaila"><input className="control" disabled={Boolean(batch)} max={1200} min={80} onChange={(event) => updateOption("thumbnailWidth", Number(event.target.value))} type="number" value={options.thumbnailWidth} /></Field>}
           <Toggle checked={options.stripMetadata} disabled={Boolean(batch)} label="Ukloni EXIF i metapodatke" onChange={(value) => updateOption("stripMetadata", value)} />
           <Toggle checked={options.watermarkEnabled} disabled={Boolean(batch)} label="Tekstualni watermark" onChange={(value) => updateOption("watermarkEnabled", value)} />
-          {options.watermarkEnabled && <div className="space-y-3 border-l-2 border-[#dce7e2] pl-3"><Field label="Tekst"><input className="control" disabled={Boolean(batch)} maxLength={80} onChange={(event) => updateOption("watermarkText", event.target.value)} value={options.watermarkText} /></Field><Field label="Pozicija"><select className="control" disabled={Boolean(batch)} onChange={(event) => updateOption("watermarkPosition", event.target.value)} value={options.watermarkPosition}><option value="northwest">Gore lijevo</option><option value="north">Gore</option><option value="northeast">Gore desno</option><option value="center">Sredina</option><option value="southwest">Dolje lijevo</option><option value="south">Dolje</option><option value="southeast">Dolje desno</option></select></Field><Field label={`Transparentnost · ${Math.round(options.watermarkOpacity * 100)}%`}><input className="range-control w-full" disabled={Boolean(batch)} max={100} min={5} onChange={(event) => updateOption("watermarkOpacity", Number(event.target.value) / 100)} type="range" value={Math.round(options.watermarkOpacity * 100)} /></Field></div>}
+          {options.watermarkEnabled && <div className="sub-settings"><Field label="Tekst"><input className="control" disabled={Boolean(batch)} maxLength={80} onChange={(event) => updateOption("watermarkText", event.target.value)} value={options.watermarkText} /></Field><Field label="Pozicija"><select className="control" disabled={Boolean(batch)} onChange={(event) => updateOption("watermarkPosition", event.target.value)} value={options.watermarkPosition}><option value="northwest">Gore lijevo</option><option value="north">Gore</option><option value="northeast">Gore desno</option><option value="center">Sredina</option><option value="southwest">Dolje lijevo</option><option value="south">Dolje</option><option value="southeast">Dolje desno</option></select></Field><Field label={`Transparentnost · ${Math.round(options.watermarkOpacity * 100)}%`}><input className="range-control w-full" disabled={Boolean(batch)} max={100} min={5} onChange={(event) => updateOption("watermarkOpacity", Number(event.target.value) / 100)} type="range" value={Math.round(options.watermarkOpacity * 100)} /></Field></div>}
         </div>
-        <button className="mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#164b3d] px-4 text-sm font-bold text-white transition hover:bg-[#0f3e32] disabled:cursor-not-allowed disabled:opacity-45" disabled={!files.length || isSubmitting || Boolean(batch)} onClick={onStart} type="button">{isSubmitting ? <LoaderCircle className="animate-spin" size={18} /> : <CloudUpload size={18} />}{batch ? "Obrada je pokrenuta" : `Obradi ${files.length || ""} ${files.length === 1 ? "fotografiju" : "fotografija"}`}{!isSubmitting && !batch && <ChevronRight size={17} />}</button>
-      </div>
+        <button className="button button-primary process-button" disabled={!files.length || isSubmitting || Boolean(batch)} onClick={onStart} type="button">{isSubmitting ? <LoaderCircle className="animate-spin" size={18} /> : <CloudUpload size={18} />}{batch ? "Obrada je pokrenuta" : files.length ? `Obradi ${files.length} ${files.length === 1 ? "fotografiju" : "fotografija"}` : "Odaberite fotografije"}{!isSubmitting && !batch && <ChevronRight size={17} />}</button>
     </aside>
+    </div>
   </div>;
 }
 
 function JobRow({ job }: { job: ApiJob }) {
-  return <div className="grid grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-4 px-5 py-3.5"><div className="grid h-10 w-10 place-items-center rounded-lg bg-[#edf3f0] text-[#668078]"><FileImage size={18} /></div><div className="min-w-0"><div className="flex items-center gap-2"><p className="truncate text-sm font-bold">{job.fileName}</p>{job.status === "completed" && <Check className="shrink-0 text-[#228666]" size={15} />}</div><div className="mt-1 flex flex-wrap gap-x-3 text-xs text-[#7a8983]"><span>{formatBytes(job.originalBytes)}</span><span className="font-semibold text-[#4c655b]">{statusCopy[job.status]}</span>{job.totalOutputBytes !== undefined && <span>→ {formatBytes(job.totalOutputBytes)}</span>}{job.startedAt && job.finishedAt && <span>{formatDuration(job.finishedAt - job.startedAt)}</span>}</div>{job.status === "active" && <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#e7eeeb]"><div className="h-full rounded-full bg-[#2b8e6e]" style={{ width: `${job.progress}%` }} /></div>}{job.error && <p className="mt-1 text-xs text-[#a74b43]">{job.error}</p>}</div>{job.downloadUrl && <a aria-label={`Preuzmi ${job.fileName}`} className="grid h-9 w-9 place-items-center rounded-lg text-[#1d7459] hover:bg-[#eaf5f0]" href={`${API_URL}${job.downloadUrl}`}><ArrowDownToLine size={17} /></a>}</div>;
+  return <div className="file-row job-row"><div className={`file-type status-${job.status}`}><FileImage size={18} /></div><div className="file-copy"><div><p>{job.fileName}</p>{job.status === "completed" && <Check size={15} />}</div><span>{formatBytes(job.originalBytes)}<b>{statusCopy[job.status]}</b>{job.totalOutputBytes !== undefined && <>na {formatBytes(job.totalOutputBytes)}</>}{job.startedAt && job.finishedAt && <>{formatDuration(job.finishedAt - job.startedAt)}</>}</span>{job.status === "active" && <div className="progress-track"><div style={{ width: `${job.progress}%` }} /></div>}{job.error && <em>{job.error}</em>}</div>{job.downloadUrl && <a aria-label={`Preuzmi ${job.fileName}`} className="icon-button" href={`${API_URL}${job.downloadUrl}`}><ArrowDownToLine size={17} /></a>}</div>;
 }
 
 function HistoryView({ batches, loading, onOpen, onRefresh }: { batches: BatchSummary[]; loading: boolean; onOpen: (id: string) => void; onRefresh: () => void }) {
-  return <section className="mx-auto max-w-[1416px] px-5 py-7 lg:px-8"><div className="mb-6 flex flex-wrap items-end justify-between gap-4"><div><p className="mb-1 text-xs font-bold uppercase tracking-[0.14em] text-[#228666]">Redis historija</p><h1 className="text-2xl font-bold sm:text-[30px]">Batch obrade</h1><p className="mt-2 text-sm text-[#66766f]">Ponovo otvorite rezultat ili preuzmite sve izlazne datoteke kao ZIP.</p></div><button aria-label="Osvježi historiju" className="grid h-10 w-10 place-items-center rounded-lg border border-[#dce4e1] bg-white text-[#476259]" onClick={onRefresh} type="button"><RefreshCw className={loading ? "animate-spin" : ""} size={17} /></button></div>
-    <div className="overflow-hidden rounded-lg border border-[#dce4e1] bg-white"><div className="hidden grid-cols-[minmax(220px,1.5fr)_150px_100px_120px_120px_80px] gap-4 border-b border-[#e4eae7] bg-[#f8faf9] px-5 py-3 text-xs font-bold uppercase text-[#76857f] md:grid"><span>Batch</span><span>Status</span><span>Datoteke</span><span>Ulaz / izlaz</span><span>Trajanje</span><span /></div>{batches.length === 0 ? <div className="grid min-h-52 place-items-center text-center text-sm text-[#718079]">{loading ? "Učitavanje historije..." : "Još nema sačuvanih batch obrada."}</div> : <div className="divide-y divide-[#edf1ef]">{batches.map((batch) => <div className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(220px,1.5fr)_150px_100px_120px_120px_80px] md:items-center md:gap-4" key={batch.batchId}><div className="min-w-0"><p className="truncate text-sm font-bold">{batch.name}</p><p className="mt-1 text-xs text-[#7a8983]">{formatDate(batch.createdAt)} · {PROFILE_LABELS[batch.profile] ?? batch.profile}</p></div><StatusBadge status={batch.status} /><p className="text-sm"><span className="text-[#7a8983] md:hidden">Datoteke: </span>{batch.stats.completed}/{batch.fileCount}</p><p className="text-xs text-[#65756e]">{formatBytes(batch.stats.inputBytes)}<br />{formatBytes(batch.stats.outputBytes)} ({batch.stats.savingsPercent}%)</p><p className="text-sm">{formatDuration(batch.stats.durationMs)}</p><div className="flex gap-1"><button aria-label={`Otvori ${batch.name}`} className="grid h-9 w-9 place-items-center rounded-lg text-[#1d7459] hover:bg-[#eaf5f0]" onClick={() => onOpen(batch.batchId)} type="button"><ExternalLink size={16} /></button>{batch.downloadUrl && <a aria-label={`Preuzmi ${batch.name}`} className="grid h-9 w-9 place-items-center rounded-lg text-[#1d7459] hover:bg-[#eaf5f0]" href={`${API_URL}${batch.downloadUrl}`}><FileArchive size={16} /></a>}</div></div>)}</div>}</div>
+  return <section className="page-frame"><header className="page-heading section-hero history-hero"><div><h1>Svaki batch ostavlja jasan trag.</h1><p>Otvorite prethodni rezultat, provjerite uštedu ili preuzmite cijeli izlaz.</p></div><button aria-label="Osvježi historiju" className="button hero-action" onClick={onRefresh} type="button"><RefreshCw className={loading ? "animate-spin" : ""} size={17} />Osvježi</button></header>
+    <div className="surface history-surface"><div className="history-head"><span>Batch</span><span>Status</span><span>Datoteke</span><span>Ulaz / izlaz</span><span>Trajanje</span><span>Akcije</span></div>{batches.length === 0 ? <div className="empty-state history-empty"><History size={29} /><p>{loading ? "Učitavanje historije..." : "Još nema sačuvanih batch obrada."}</p><span>Pokrenite prvu obradu da biste ovdje dobili trag rezultata.</span></div> : <div className="history-list">{batches.map((batch) => <div className="history-row" key={batch.batchId}><div className="history-name"><p>{batch.name}</p><span>{formatDate(batch.createdAt)} · {PROFILE_LABELS[batch.profile] ?? batch.profile}</span></div><StatusBadge status={batch.status} /><p data-label="Datoteke">{batch.stats.completed}/{batch.fileCount}</p><p data-label="Ulaz / izlaz">{formatBytes(batch.stats.inputBytes)}<span>{formatBytes(batch.stats.outputBytes)} · ušteda {batch.stats.savingsPercent}%</span></p><p data-label="Trajanje">{formatDuration(batch.stats.durationMs)}</p><div className="row-actions"><button aria-label={`Otvori ${batch.name}`} className="icon-button" onClick={() => onOpen(batch.batchId)} type="button"><ExternalLink size={16} /></button>{batch.downloadUrl && <a aria-label={`Preuzmi ${batch.name}`} className="icon-button" href={`${API_URL}${batch.downloadUrl}`}><FileArchive size={16} /></a>}</div></div>)}</div>}</div>
   </section>;
 }
 
@@ -535,21 +560,21 @@ function ExperimentView({ activeSession, metrics, sessionName, sessions, workloa
   const running = activeSession?.status === "active";
   const samples = activeSession?.samples ?? [];
   const summary = activeSession?.summary;
-  return <section className="mx-auto max-w-[1416px] space-y-6 px-5 py-7 lg:px-8"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="mb-1 text-xs font-bold uppercase tracking-[0.14em] text-[#228666]">Stvarni podaci sistema</p><h1 className="text-2xl font-bold sm:text-[30px]">Eksperimentalni dashboard</h1><p className="mt-2 text-sm text-[#66766f]">Vrijednosti dolaze iz Redis reda, BullMQ događaja i heartbeat zapisa aktivnih workera.</p></div><span className={`rounded-lg px-3 py-2 text-xs font-bold ${metrics?.deploymentPolicy === "STATIC" ? "bg-[#e8ecef] text-[#43515b]" : "bg-[#dff3ea] text-[#176b51]"}`}>POLITIKA: {metrics ? POLICY_LABELS[metrics.deploymentPolicy] : "-"}</span></div>
+  return <section className="page-frame experiment-page"><header className="page-heading section-hero experiment-hero"><div><h1>Skaliranje vidljivo u stvarnom vremenu.</h1><p>Uporedite red, workere, propusnost, latenciju i alocirani kapacitet.</p></div><span className="policy-chip"><ServerCog size={15} />{metrics ? POLICY_LABELS[metrics.deploymentPolicy] : "Politika nije dostupna"}</span></header>
 
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><MetricCard icon={<Clock3 size={17} />} label="Dužina reda" value={String(metrics?.queueLength ?? "-")} /><MetricCard icon={<Activity size={17} />} label="Aktivni poslovi" value={String(metrics?.activeJobs ?? "-")} /><MetricCard icon={<Users size={17} />} label="Aktivni workeri" value={String(metrics?.activeWorkers ?? "-")} /><MetricCard icon={<Gauge size={17} />} label="Throughput / 60 s" value={String(metrics?.throughputLast60Seconds ?? "-")} /><MetricCard icon={<Cpu size={17} />} label="Prosječni CPU workera" value={metrics ? `${metrics.averageWorkerCpuPercent.toFixed(1)}%` : "-"} /><MetricCard icon={<MemoryStick size={17} />} label="Prosječna memorija workera" value={metrics ? formatBytes(metrics.averageWorkerMemoryBytes) : "-"} /><MetricCard icon={<Cpu size={17} />} label="Alocirani CPU" value={metrics ? `${metrics.allocatedCpuCores.toFixed(2)} jezgri` : "-"} /><MetricCard icon={<MemoryStick size={17} />} label="Alocirana memorija" value={metrics ? `${metrics.allocatedMemoryMiB.toFixed(0)} MiB` : "-"} /><MetricCard icon={<Check size={17} />} label="Završeni poslovi" value={String(metrics?.completedJobs ?? "-")} /><MetricCard icon={<X size={17} />} label="Neuspješni poslovi" value={String(metrics?.failedJobs ?? "-")} /><MetricCard icon={<Clock3 size={17} />} label="Prosječna / P95 obrada" value={metrics ? `${formatDuration(metrics.averageProcessingMs)} / ${formatDuration(metrics.p95ProcessingMs)}` : "-"} /><MetricCard icon={<Clock3 size={17} />} label="Prosječno čekanje" value={formatDuration(metrics?.averageQueueWaitMs)} /><MetricCard icon={<Archive size={17} />} label="Obrađeni podaci" value={metrics ? formatBytes(metrics.processedBytes) : "-"} /></div>
+    <div className="metric-ribbon experiment-metrics"><MetricCard icon={<Clock3 size={17} />} label="Dužina reda" value={String(metrics?.queueLength ?? "-")} /><MetricCard icon={<Activity size={17} />} label="Aktivni poslovi" value={String(metrics?.activeJobs ?? "-")} /><MetricCard icon={<Users size={17} />} label="Aktivni workeri" value={String(metrics?.activeWorkers ?? "-")} /><MetricCard icon={<Gauge size={17} />} label="Throughput / 60 s" value={String(metrics?.throughputLast60Seconds ?? "-")} /><MetricCard icon={<Cpu size={17} />} label="CPU workera" value={metrics ? `${metrics.averageWorkerCpuPercent.toFixed(1)}%` : "-"} /><MetricCard icon={<MemoryStick size={17} />} label="Memorija workera" value={metrics ? formatBytes(metrics.averageWorkerMemoryBytes) : "-"} /><MetricCard icon={<Cpu size={17} />} label="Alocirani CPU" value={metrics ? `${metrics.allocatedCpuCores.toFixed(2)} jezgri` : "-"} /><MetricCard icon={<MemoryStick size={17} />} label="Alocirana memorija" value={metrics ? `${metrics.allocatedMemoryMiB.toFixed(0)} MiB` : "-"} /><MetricCard icon={<Check size={17} />} label="Završeni" value={String(metrics?.completedJobs ?? "-")} /><MetricCard icon={<X size={17} />} label="Neuspješni" value={String(metrics?.failedJobs ?? "-")} /><MetricCard icon={<Clock3 size={17} />} label="Prosjek / P95" value={metrics ? `${formatDuration(metrics.averageProcessingMs)} / ${formatDuration(metrics.p95ProcessingMs)}` : "-"} /><MetricCard icon={<Clock3 size={17} />} label="Čekanje" value={formatDuration(metrics?.averageQueueWaitMs)} /><MetricCard icon={<Archive size={17} />} label="Obrađeni podaci" value={metrics ? formatBytes(metrics.processedBytes) : "-"} /></div>
 
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]"><div className="rounded-lg border border-[#dce4e1] bg-white p-5"><div className="mb-4 flex items-center justify-between"><div><h2 className="font-bold">Tekuća sesija</h2><p className="mt-1 text-xs text-[#7a8983]">Red, workeri i throughput iz stvarnih uzoraka</p></div>{running && <span className="inline-flex items-center gap-2 text-xs font-bold text-[#1d7459]"><span className="h-2 w-2 rounded-full bg-[#31a779]" />AKTIVNA</span>}</div>{samples.length > 1 ? <div className="h-72 w-full"><ResponsiveContainer><LineChart data={samples}><XAxis dataKey="timestamp" tickFormatter={(value) => new Date(value).toLocaleTimeString("bs-BA", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} minTickGap={30} tick={{ fontSize: 11 }} /><YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={32} /><Tooltip labelFormatter={(value) => formatDate(Number(value))} /><Line dataKey="queueLength" name="Red" stroke="#c47a32" strokeWidth={2} dot={false} /><Line dataKey="activeWorkers" name="Workeri" stroke="#228666" strokeWidth={2} dot={false} /><Line dataKey="throughputLast60Seconds" name="Throughput" stroke="#516f9a" strokeWidth={2} dot={false} /></LineChart></ResponsiveContainer></div> : <div className="grid h-72 place-items-center text-center text-sm text-[#78877f]">Pokrenite sesiju da se prikažu stvarni uzorci.</div>}{summary && <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[#e6ece9] pt-4 text-sm sm:grid-cols-3"><SummaryValue label="Worker-minute" value={summary.workerMinutes.toFixed(2)} /><SummaryValue label="CPU request jezgra-minute" value={summary.cpuRequestCoreMinutes.toFixed(2)} /><SummaryValue label="Memorija request MiB-minute" value={summary.memoryRequestMiBMinutes.toFixed(1)} /><SummaryValue label="Poslova / worker-minuti" value={summary.jobsPerWorkerMinute.toFixed(2)} /><SummaryValue label="CPU u odnosu na request" value={`${summary.averageCapacityUtilizationPercent.toFixed(1)}%`} /><SummaryValue label="CPU prosjek / maksimum" value={`${summary.averageWorkerCpuPercent.toFixed(1)}% / ${summary.maximumWorkerCpuPercent.toFixed(1)}%`} /><SummaryValue label="Memorija prosjek / maksimum" value={`${summary.averageWorkerMemoryMiB.toFixed(1)} / ${summary.maximumWorkerMemoryMiB.toFixed(1)} MiB`} /><SummaryValue label="Promjene broja replika" value={String(summary.scalingActions)} /><SummaryValue label="Scale-up reakcija" value={summary.scaleUpReactionMs === null ? "Nije zabilježena" : formatDuration(summary.scaleUpReactionMs)} /><SummaryValue label="Maksimalni red" value={summary.maximumQueueLength.toFixed(0)} /><SummaryValue label="Završeni / neuspješni" value={`${summary.completedJobs} / ${summary.failedJobs}`} /><SummaryValue label="Procijenjeni trošak alociranog kapaciteta" value={summary.estimatedAllocatedCapacityCost === null ? "Stopa nije postavljena" : summary.estimatedAllocatedCapacityCost.toFixed(4)} /></div>}</div>
+    <div className="experiment-grid"><div className="surface chart-surface"><div className="surface-header"><div><h2>Tekuća sesija</h2><p>Red, workeri i throughput iz stvarnih uzoraka</p></div>{running && <span className="live-badge"><span />Aktivna</span>}</div>{samples.length > 1 ? <div className="chart-wrap"><ResponsiveContainer><LineChart data={samples}><XAxis dataKey="timestamp" tickFormatter={(value) => new Date(value).toLocaleTimeString("bs-BA", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} minTickGap={30} tick={{ fontSize: 11, fill: "#6c7b7d" }} axisLine={{ stroke: "#dbe2e1" }} tickLine={false} /><YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "#6c7b7d" }} axisLine={false} tickLine={false} width={32} /><Tooltip contentStyle={{ borderRadius: 10, border: "1px solid #dbe2e1", boxShadow: "0 12px 30px rgba(16,23,25,.10)" }} labelFormatter={(value) => formatDate(Number(value))} /><Line dataKey="queueLength" name="Red" stroke="#c98524" strokeWidth={2.5} dot={false} /><Line dataKey="activeWorkers" name="Workeri" stroke="#00a7a0" strokeWidth={2.5} dot={false} /><Line dataKey="throughputLast60Seconds" name="Throughput" stroke="#c63c73" strokeWidth={2.5} dot={false} /></LineChart></ResponsiveContainer></div> : <div className="empty-state chart-empty"><Activity size={29} /><p>Pokrenite sesiju za prikaz telemetrije.</p><span>Novi uzorak stiže svakih pet sekundi.</span></div>}{summary && <div className="summary-grid"><SummaryValue label="Worker-minute" value={summary.workerMinutes.toFixed(2)} /><SummaryValue label="CPU request jezgra-minute" value={summary.cpuRequestCoreMinutes.toFixed(2)} /><SummaryValue label="Memorija request MiB-minute" value={summary.memoryRequestMiBMinutes.toFixed(1)} /><SummaryValue label="Poslova / worker-minuti" value={summary.jobsPerWorkerMinute.toFixed(2)} /><SummaryValue label="CPU u odnosu na request" value={`${summary.averageCapacityUtilizationPercent.toFixed(1)}%`} /><SummaryValue label="CPU prosjek / maksimum" value={`${summary.averageWorkerCpuPercent.toFixed(1)}% / ${summary.maximumWorkerCpuPercent.toFixed(1)}%`} /><SummaryValue label="Memorija prosjek / maksimum" value={`${summary.averageWorkerMemoryMiB.toFixed(1)} / ${summary.maximumWorkerMemoryMiB.toFixed(1)} MiB`} /><SummaryValue label="Promjene broja replika" value={String(summary.scalingActions)} /><SummaryValue label="Scale-up reakcija" value={summary.scaleUpReactionMs === null ? "Nije zabilježena" : formatDuration(summary.scaleUpReactionMs)} /><SummaryValue label="Maksimalni red" value={summary.maximumQueueLength.toFixed(0)} /><SummaryValue label="Završeni / neuspješni" value={`${summary.completedJobs} / ${summary.failedJobs}`} /><SummaryValue label="Procijenjeni trošak kapaciteta" value={summary.estimatedAllocatedCapacityCost === null ? "Stopa nije postavljena" : summary.estimatedAllocatedCapacityCost.toFixed(4)} /></div>}</div>
 
-      <div className="space-y-5"><div className="rounded-lg border border-[#dce4e1] bg-white p-5"><h2 className="font-bold">Upravljanje sesijom</h2>{!running ? <div className="mt-4 space-y-4"><Field label="Naziv sesije"><input className="control" maxLength={80} onChange={(event) => onSessionName(event.target.value)} placeholder="Npr. Dynamic ramp 01" value={sessionName} /></Field><Field label="Profil opterećenja"><select className="control" onChange={(event) => onWorkloadProfile(event.target.value)} value={workloadProfile}><option value="low">Low</option><option value="high">High</option><option value="ramp">Ramp</option><option value="spike">Spike</option><option value="custom">Prilagođeni</option></select></Field><button className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#164b3d] text-sm font-bold text-white" onClick={onStart} type="button"><Play size={16} />Pokreni sesiju</button></div> : <div className="mt-4"><p className="text-sm font-bold">{activeSession.name}</p><p className="mt-1 text-xs text-[#77867f]">{activeSession.workloadProfile} · od {formatDate(activeSession.startedAt)}</p><button className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#9b443b] text-sm font-bold text-white" onClick={onStop} type="button"><Square size={15} />Završi sesiju</button></div>}{activeSession && <div className="mt-3 grid grid-cols-2 gap-2"><a className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-[#edf4f1] text-xs font-bold text-[#216f57]" href={`${API_URL}/experiment/sessions/${activeSession.id}/export?format=json`}><Download size={14} />JSON</a><a className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-[#edf4f1] text-xs font-bold text-[#216f57]" href={`${API_URL}/experiment/sessions/${activeSession.id}/export?format=csv`}><Download size={14} />CSV</a></div>}</div>
-        <div className="rounded-lg border border-[#dce4e1] bg-white p-5"><h2 className="mb-3 font-bold">Prethodne sesije</h2><div className="max-h-64 divide-y divide-[#edf1ef] overflow-auto">{sessions.length ? sessions.map((session) => <button className="flex w-full items-center justify-between gap-3 py-3 text-left" key={session.id} onClick={() => onLoadSession(session.id)} type="button"><div className="min-w-0"><p className="truncate text-sm font-bold">{session.name}</p><p className="mt-0.5 text-xs text-[#7a8983]">{session.workloadProfile} · {formatDate(session.startedAt)}</p></div><ChevronRight className="shrink-0 text-[#84928c]" size={16} /></button>) : <p className="py-5 text-sm text-[#7a8983]">Još nema sesija.</p>}</div></div></div>
+      <div className="experiment-side"><div className="surface session-control"><div className="surface-header"><div><h2>Upravljanje sesijom</h2><p>{running ? "Mjerenje je u toku" : "Definišite sljedeće mjerenje"}</p></div></div>{!running ? <div className="settings-form"><Field label="Naziv sesije"><input className="control" maxLength={80} onChange={(event) => onSessionName(event.target.value)} placeholder="Npr. Dynamic ramp 01" value={sessionName} /></Field><Field label="Profil opterećenja"><select className="control" onChange={(event) => onWorkloadProfile(event.target.value)} value={workloadProfile}><option value="low">Low</option><option value="high">High</option><option value="ramp">Ramp</option><option value="spike">Spike</option><option value="custom">Prilagođeni</option></select></Field><button className="button button-experiment" onClick={onStart} type="button"><Play size={16} />Pokreni sesiju</button></div> : <div className="running-session"><strong>{activeSession.name}</strong><span>{activeSession.workloadProfile} · od {formatDate(activeSession.startedAt)}</span><button className="button button-danger" onClick={onStop} type="button"><Square size={15} />Završi sesiju</button></div>}{activeSession && <div className="export-actions"><a className="button button-secondary" href={`${API_URL}/experiment/sessions/${activeSession.id}/export?format=json`}><Download size={14} />JSON</a><a className="button button-secondary" href={`${API_URL}/experiment/sessions/${activeSession.id}/export?format=csv`}><Download size={14} />CSV</a></div>}</div>
+        <div className="surface previous-sessions"><div className="surface-header"><div><h2>Prethodne sesije</h2><p>{sessions.length} sačuvano</p></div></div><div className="session-list">{sessions.length ? sessions.map((session) => <button key={session.id} onClick={() => onLoadSession(session.id)} type="button"><div><p>{session.name}</p><span>{session.workloadProfile} · {formatDate(session.startedAt)}</span></div><ChevronRight size={16} /></button>) : <div className="empty-inline">Još nema sesija.</div>}</div></div></div>
     </div>
   </section>;
 }
 
-function NavButton({ active, icon, label, onClick }: { active: boolean; icon: ReactNode; label: string; onClick: () => void }) { return <button aria-current={active ? "page" : undefined} className={`inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md px-3 text-sm font-bold transition sm:flex-none ${active ? "bg-white text-[#164b3d] shadow-sm" : "text-[#687872] hover:text-[#243b33]"}`} onClick={onClick} type="button">{icon}{label}</button>; }
-function MetricCard({ icon, label, value }: { icon: ReactNode; label: string; value: string }) { return <div className="flex min-h-20 items-center gap-3 rounded-lg border border-[#dce4e1] bg-white px-4 py-3.5"><div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#e9f4ef] text-[#24795e]">{icon}</div><div className="min-w-0"><p className="text-[11px] font-semibold uppercase text-[#829089]">{label}</p><p className="mt-0.5 break-words text-base font-bold">{value}</p></div></div>; }
-function Field({ children, label }: { children: ReactNode; label: string }) { return <label className="block"><span className="mb-1.5 block text-xs font-bold text-[#566760]">{label}</span>{children}</label>; }
-function Toggle({ checked, disabled, label, onChange }: { checked: boolean; disabled: boolean; label: string; onChange: (value: boolean) => void }) { return <div className="flex items-center justify-between gap-4 rounded-lg bg-[#f4f7f6] p-3"><span className="text-sm font-semibold">{label}</span><button aria-checked={checked} aria-label={label} className={`relative h-6 w-11 shrink-0 rounded-full transition ${checked ? "bg-[#238666]" : "bg-[#c8d2ce]"}`} disabled={disabled} onClick={() => onChange(!checked)} role="switch" type="button"><span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition ${checked ? "left-6" : "left-1"}`} /></button></div>; }
-function StatusBadge({ status }: { status: BatchStatus }) { return <span className={`w-fit rounded-md px-2 py-1 text-xs font-bold ${status === "completed" ? "bg-[#e3f3eb] text-[#1d7459]" : status === "failed" ? "bg-[#fff0ed] text-[#a74b43]" : "bg-[#f8edda] text-[#8c6128]"}`}>{batchStatusCopy[status]}</span>; }
-function SummaryValue({ label, value }: { label: string; value: string }) { return <div><p className="text-xs text-[#7a8983]">{label}</p><p className="mt-1 font-bold">{value}</p></div>; }
+function NavButton({ active, icon, label, onClick }: { active: boolean; icon: ReactNode; label: string; onClick: () => void }) { return <button aria-current={active ? "page" : undefined} className={`nav-button ${active ? "is-active" : ""}`} onClick={onClick} type="button">{icon}<span>{label}</span></button>; }
+function MetricCard({ icon, label, value }: { icon: ReactNode; label: string; value: string }) { return <div className="metric-item"><span className="metric-icon">{icon}</span><div><p>{label}</p><strong>{value}</strong></div></div>; }
+function Field({ children, label }: { children: ReactNode; label: string }) { return <label className="field"><span>{label}</span>{children}</label>; }
+function Toggle({ checked, disabled, label, onChange }: { checked: boolean; disabled: boolean; label: string; onChange: (value: boolean) => void }) { return <div className="toggle-row"><span>{label}</span><button aria-checked={checked} aria-label={label} className={`toggle ${checked ? "is-checked" : ""}`} disabled={disabled} onClick={() => onChange(!checked)} role="switch" type="button"><span /></button></div>; }
+function StatusBadge({ status }: { status: BatchStatus }) { return <span className={`status-badge status-${status}`}>{batchStatusCopy[status]}</span>; }
+function SummaryValue({ label, value }: { label: string; value: string }) { return <div className="summary-value"><p>{label}</p><strong>{value}</strong></div>; }
