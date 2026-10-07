@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   createRunId,
   drainState,
+  k6MetricValue,
   nonNegativeInteger,
   optionalPolicy,
   positiveInteger,
@@ -45,4 +46,10 @@ test("drain zahtijeva prazan red, bez aktivnih i nedovršenih poslova", () => {
     { queueLength: 0, activeJobs: 0 },
     { summary: { submittedJobs: 0, incompleteJobs: 0 } },
   ).drained, false);
+});
+
+test("čita k6 metrike iz starog i novog summary formata", () => {
+  assert.equal(k6MetricValue({ metrics: { dropped_iterations: { values: { count: 3 } } } }, "dropped_iterations", "count"), 3);
+  assert.equal(k6MetricValue({ metrics: { dropped_iterations: { count: 4 } } }, "dropped_iterations", "count"), 4);
+  assert.equal(k6MetricValue({}, "dropped_iterations", "count"), 0);
 });

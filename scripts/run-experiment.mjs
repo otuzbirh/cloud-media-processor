@@ -1,11 +1,12 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createWriteStream } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   createRunId,
   drainState,
+  k6MetricValue,
   nonNegativeInteger,
   optionalPolicy,
   positiveInteger,
@@ -291,18 +292,26 @@ async function main() {
   await capture("Završno stanje klastera", () => captureClusterState(namespace, "after", runDirectory));
   await capture("Logovi klastera", () => captureClusterLogs(namespace, startedAt, runDirectory));
 
+  const k6Summary = k6Result
+    ? await capture("k6 summary", async () => JSON.parse(await readFile(join(runDirectory, "k6-summary.json"), "utf8")))
+    : null;
+  const droppedIterations = k6MetricValue(k6Summary, "dropped_iterations", "count");
+
   const summary = stoppedSession?.summary;
   const failureReasons = [];
   if (drainError) failureReasons.push(drainError.message);
   failureReasons.push(...captureErrors);
   if (!k6Result) failureReasons.push("k6 nije pokrenut.");
   else if (k6Result.exitCode !== 0) failureReasons.push(`k6 je završio kodom ${k6Result.exitCode}${k6Result.signal ? ` (${k6Result.signal})` : ""}.`);
+  if (droppedIterations > 0) failureReasons.push(`k6 je odbacio ${droppedIterations} planiranih iteracija.`);
   if (!summary?.submittedJobs) failureReasons.push("Sesija nema poslanih poslova.");
+  if (summary?.failedJobs) failureReasons.push(`Sesija ima ${summary.failedJobs} neuspješnih poslova.`);
   if (summary?.incompleteJobs) failureReasons.push(`Sesija ima ${summary.incompleteJobs} nedovršenih poslova.`);
 
   manifest.status = failureReasons.length ? "failed" : "completed";
   manifest.finishedAt = new Date().toISOString();
   manifest.k6 = k6Result ?? null;
+  manifest.loadGenerator = { droppedIterations };
   manifest.summary = summary ?? null;
   manifest.finalMetrics = finalMetrics;
   manifest.failureReasons = failureReasons;

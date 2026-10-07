@@ -108,6 +108,8 @@ Runner izvršava sljedeći postupak:
 
 Runner podrazumijevano zahtijeva čisto Git stablo. `ALLOW_DIRTY=1` koristi se samo tokom pilot-testa. Artefakti se čuvaju pod `results/<run-id>/`, koji Git ne prati.
 
+k6 samo šalje poslove prema definisanoj arrival-rate krivulji. Ne anketira status svakog posla jer bi dodatni HTTP zahtjevi opteretili API i Redis. Završetak, greške, turnaround i drain mjere eksperimentalna sesija i runner. Svaka odbačena k6 iteracija čini izvođenje nevalidnim.
+
 Svaki profil se izvodi najmanje pet puta po politici. Redoslijed S0, S1 i S2 se randomizira ili koristi uravnotežen raspored kako redoslijed izvođenja ne bi bio povezan s jednom politikom.
 
 ## 6. Rezultati za tabelarni prikaz
@@ -133,6 +135,16 @@ JSON export je primarni zapis sesije jer sadrži metapodatke, sve periodične uz
 ## 7. Analiza
 
 Za svaku metriku prikazati srednju vrijednost, medijan, standardnu devijaciju i P95 gdje ima smisla. Uz apsolutne vrijednosti prikazati relativnu promjenu dinamičkog u odnosu na statički scenarij.
+
+Skupovi podataka generišu se iz arhiviranih runova:
+
+```bash
+EXPECTED_REPETITIONS=5 pnpm analyze:experiments
+```
+
+`runs.csv` sadrži jedno izvođenje po redu. `summary.csv` računa statistike između ponavljanja iste politike i profila. Standardna devijacija je uzoračka i zahtijeva najmanje dva runa. `comparisons.csv` poredi srednje vrijednosti S1 i S2 sa S0; relativna promjena nije automatski poboljšanje jer poželjan smjer zavisi od metrike. `timeseries.csv` služi za grafikone kroz normalizovano vrijeme.
+
+Prije interpretacije mora proći kontrola u `coverage.csv` i `report.json`: pet tačno označenih ponavljanja svake kombinacije, bez duplikata, bez isključenih runova, bez nedostajućih artefakata i uz jednu Git reviziju. Za konačni skup koristi se `STRICT_ANALYSIS=1`.
 
 Grafikoni po vremenu trebaju na istoj osi prikazati ulazno opterećenje, dužinu reda, broj replika i P95 vrijeme obrta. Zbirna tabela treba povezati performanse s worker-minutama i procijenjenim troškom.
 

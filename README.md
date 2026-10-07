@@ -137,7 +137,7 @@ Zajednička Kubernetes baza sadrži identične image verzije, requeste, limite i
 
 ## Test opterećenja
 
-Komanda `run:experiment` automatizuje preflight provjere, sesiju, k6, pražnjenje reda i arhiviranje artefakata. Podržani profili su `low`, `high`, `ramp` i `spike`:
+Komanda `run:experiment` automatizuje preflight provjere, sesiju, k6, pražnjenje reda i arhiviranje artefakata. k6 samo šalje poslove zadatom stopom; API sesija mjeri njihov završetak, a runner nakon opterećenja čeka potpuno pražnjenje. Tako statusno anketiranje ne kontaminira mjerenje. Podržani profili su `low`, `high`, `ramp` i `spike`:
 
 ```bash
 SCENARIO=ramp \
@@ -159,6 +159,30 @@ Svaki profil treba ponoviti najmanje pet puta za sva tri scenarija. Redoslijed S
 
 Detaljan postupak nalazi se u [eksperimentalnom protokolu](docs/experiment-protocol.md).
 
+Nalazi lokalnog kalibracijskog izvođenja nalaze se u [rezultatima pilot-testa](docs/pilot-results.md).
+
+## Analiza eksperimentalnih rezultata
+
+Nakon izvođenja kompletne matrice generišite skupove podataka za analizu:
+
+```bash
+EXPECTED_REPETITIONS=5 \
+RESULTS_DIR=results \
+ANALYSIS_DIR=analysis \
+pnpm analyze:experiments
+```
+
+Komanda generiše:
+
+- `runs.csv`: jedan red po validnom izvođenju;
+- `summary.csv`: broj uzoraka, srednja vrijednost, medijan, uzoračka standardna devijacija, P95, minimum i maksimum;
+- `comparisons.csv`: apsolutna i relativna promjena CPU HPA i KEDA srednjih vrijednosti prema `STATIC` osnovi;
+- `timeseries.csv`: objedinjeni uzorci s vremenom normalizovanim od početka izvođenja;
+- `coverage.csv`: provjera svih politika, profila i rednih brojeva ponavljanja;
+- `report.json`: potpuni mašinski čitljiv izvještaj, isključena izvođenja i upozorenja.
+
+Analiza isključuje nezavršene runove, runove bez ključnih metrika i sesije s nedovršenim poslovima. Upozorava na duplikate, nedostajuća ponavljanja, više Git revizija i nedostajuće artefakte. `STRICT_ANALYSIS=1` vraća grešku ako bilo koja kontrola kvaliteta ne prođe.
+
 ## Struktura projekta
 
 ```text
@@ -173,5 +197,6 @@ infra/k8s/dynamic/      queue/KEDA skaliranje od jedne do šest replika
 tests/load/             k6 profili opterećenja
 tests/unit/             image, polling, validacija i metrički testovi
 scripts/run-experiment.mjs automatizovano eksperimentalno izvođenje
+scripts/analyze-experiments.mjs agregacija i kontrola rezultata
 docs/                   eksperimentalna dokumentacija
 ```

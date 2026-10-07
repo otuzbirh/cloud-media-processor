@@ -1,6 +1,6 @@
 import http from "k6/http";
-import { check, sleep } from "k6";
-import { Rate, Trend } from "k6/metrics";
+import { check } from "k6";
+import { Rate } from "k6/metrics";
 
 const baseUrl = __ENV.BASE_URL ?? "http://localhost:4000";
 const token = __ENV.BENCHMARK_TOKEN ?? "local-benchmark-token";
@@ -56,16 +56,15 @@ const profiles = {
 export const options = {
   scenarios: { selected: profiles[scenario] ?? profiles.low },
   thresholds: {
+    dropped_iterations: ["count==0"],
     http_req_failed: ["rate<0.01"],
-    job_completion_failed: ["rate<0.02"],
+    job_submission_failed: ["rate<0.01"],
   },
 };
 
-const jobTurnaround = new Trend("job_turnaround_ms", true);
-const jobCompletionFailed = new Rate("job_completion_failed");
+const jobSubmissionFailed = new Rate("job_submission_failed");
 
-export default function submitAndWaitForJob() {
-  const startedAt = Date.now();
+export default function submitJob() {
   const payload = { count: jobsPerRequest, format: "webp", quality: 78, width: 1600 };
   if (experimentSessionId) payload.experimentSessionId = experimentSessionId;
   const submit = http.post(
@@ -74,25 +73,5 @@ export default function submitAndWaitForJob() {
     { headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` } },
   );
   const accepted = check(submit, { "posao prihvaćen": (response) => response.status === 202 });
-  if (!accepted) {
-    jobCompletionFailed.add(true);
-    return;
-  }
-
-  const batchId = submit.json("batchId");
-  for (let attempt = 0; attempt < 300; attempt += 1) {
-    const status = http.get(`${baseUrl}/batches/${batchId}`);
-    if (status.status === 200) {
-      const jobs = status.json("jobs");
-      const finished = jobs.every((job) => job.status === "completed" || job.status === "failed");
-      if (finished) {
-        const success = jobs.every((job) => job.status === "completed");
-        jobCompletionFailed.add(!success);
-        jobTurnaround.add(Date.now() - startedAt);
-        return;
-      }
-    }
-    sleep(0.2);
-  }
-  jobCompletionFailed.add(true);
+  jobSubmissionFailed.add(!accepted);
 }
