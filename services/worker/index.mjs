@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { Worker } from "bullmq";
 import { Counter, Gauge, Histogram, Registry, collectDefaultMetrics } from "prom-client";
 import sharp from "sharp";
-import { config } from "../shared/config.mjs";
+import { config, sessionJobMetricsKey } from "../shared/config.mjs";
 import { ensureBuckets, redis, storage, streamToBuffer } from "../shared/connections.mjs";
 import { processImageOutputs } from "../shared/image.mjs";
 
@@ -53,6 +53,7 @@ async function recordFinishedJob(job, status, result = {}) {
   const event = {
     id: job.id,
     batchId: job.data.batchId,
+    experimentSessionId: job.data.experimentSessionId ?? null,
     workerId,
     status,
     queuedAt: job.timestamp,
@@ -60,11 +61,20 @@ async function recordFinishedJob(job, status, result = {}) {
     finishedAt,
     queueWaitMs: Math.max(0, (job.processedOn ?? finishedAt) - job.timestamp),
     processingMs: Math.max(0, result.processingMs ?? finishedAt - (job.processedOn ?? finishedAt)),
+    turnaroundMs: Math.max(0, finishedAt - job.timestamp),
     inputBytes: job.data.originalBytes ?? 0,
     outputBytes: result.totalOutputBytes ?? result.outputBytes ?? 0,
   };
-  await redis.zadd(config.jobMetricsKey, finishedAt, JSON.stringify(event));
-  await redis.zremrangebyscore(config.jobMetricsKey, 0, finishedAt - config.metricRetentionMs);
+  const serializedEvent = JSON.stringify(event);
+  const metricUpdates = redis.multi()
+    .zadd(config.jobMetricsKey, finishedAt, serializedEvent)
+    .zremrangebyscore(config.jobMetricsKey, 0, finishedAt - config.metricRetentionMs);
+  if (event.experimentSessionId) {
+    metricUpdates
+      .zadd(sessionJobMetricsKey(event.experimentSessionId), finishedAt, serializedEvent)
+      .expire(sessionJobMetricsKey(event.experimentSessionId), config.batchRetentionSeconds);
+  }
+  await metricUpdates.exec();
   const batchKey = `batch:${job.data.batchId}`;
   const updates = redis.multi().hset(batchKey, "updatedAt", String(finishedAt));
   if (status === "completed") {

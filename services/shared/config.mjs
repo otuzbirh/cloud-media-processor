@@ -10,6 +10,12 @@ function deploymentPolicy(value) {
   return "STATIC";
 }
 
+const sessionJobMetricsPrefix = process.env.EXPERIMENT_SESSION_JOB_METRICS_PREFIX ?? "media:experiments:session";
+
+export function sessionJobMetricsKey(sessionId) {
+  return `${sessionJobMetricsPrefix}:${sessionId}:jobs`;
+}
+
 export const config = {
   queueName: process.env.QUEUE_NAME ?? "image-processing",
   pendingList: process.env.PENDING_LIST ?? "media-processing:pending",

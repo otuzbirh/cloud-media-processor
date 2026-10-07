@@ -8,7 +8,7 @@ import cors from "cors";
 import express from "express";
 import multer from "multer";
 import { Counter, Gauge, Registry, collectDefaultMetrics } from "prom-client";
-import { config } from "../shared/config.mjs";
+import { config, sessionJobMetricsKey } from "../shared/config.mjs";
 import { ensureBuckets, queue, redis, storage } from "../shared/connections.mjs";
 import { freshWorkerDetails, summarizeJobEvents, summarizeSession } from "../shared/metrics.mjs";
 import { validatedOptions } from "../shared/options.mjs";
@@ -76,10 +76,39 @@ function inputError(message) {
   return error;
 }
 
+function conflictError(message) {
+  const error = new Error(message);
+  error.status = 409;
+  return error;
+}
+
 function safeName(value, fallback) {
   const name = String(value ?? "").trim();
   if (name.length > 80) throw inputError("Naziv može sadržavati najviše 80 znakova.");
   return name || fallback;
+}
+
+async function activeExperimentSessionIds() {
+  const ids = await redis.smembers(config.activeSessionsKey);
+  if (!ids.length) return [];
+  const states = await Promise.all(ids.map(async (id) => ({ id, metadata: await redis.hgetall(sessionKey(id)) })));
+  const active = states.filter(({ metadata }) => Object.keys(metadata).length && metadata.status === "active").map(({ id }) => id);
+  const stale = states.filter(({ id }) => !active.includes(id)).map(({ id }) => id);
+  if (stale.length) await redis.srem(config.activeSessionsKey, ...stale);
+  return active;
+}
+
+async function resolveExperimentSessionId(value) {
+  const requestedId = String(value ?? "").trim();
+  if (requestedId) {
+    const metadata = await redis.hgetall(sessionKey(requestedId));
+    if (!Object.keys(metadata).length) throw inputError("Eksperimentalna sesija nije pronađena.");
+    if (metadata.status !== "active") throw conflictError("Eksperimentalna sesija nije aktivna.");
+    return requestedId;
+  }
+  const activeIds = await activeExperimentSessionIds();
+  if (activeIds.length > 1) throw conflictError("Više eksperimentalnih sesija je aktivno. Navedite experimentSessionId.");
+  return activeIds[0] ?? null;
 }
 
 app.get("/health", async (_request, response) => {
@@ -243,9 +272,10 @@ app.post("/benchmark/jobs", async (request, response, next) => {
   const batchId = randomUUID();
   const createdAt = Date.now();
   try {
+    const experimentSessionId = await resolveExperimentSessionId(request.body.experimentSessionId);
     const options = validatedOptions({ ...request.body, profile: "custom", thumbnailEnabled: false, watermarkEnabled: false });
     const jobs = await Promise.all(Array.from({ length: count }, (_, index) => enqueueJob(
-      { batchId, fileName: `benchmark-${index + 1}.png`, originalBytes: 48_000_000, synthetic: true, options },
+      { batchId, experimentSessionId, fileName: `benchmark-${index + 1}.png`, originalBytes: 48_000_000, synthetic: true, options },
       { attempts: 1, removeOnComplete: { age: config.batchRetentionSeconds }, removeOnFail: { age: config.batchRetentionSeconds } },
     )));
     await rememberBatch(batchId, jobs, {
@@ -263,7 +293,8 @@ app.post("/benchmark/jobs", async (request, response, next) => {
       failedCount: 0,
     });
     submittedJobs.inc(jobs.length);
-    response.status(202).json({ batchId, submitted: jobs.length });
+    if (experimentSessionId) await redis.hincrby(sessionKey(experimentSessionId), "submittedJobs", jobs.length);
+    response.status(202).json({ batchId, experimentSessionId, submitted: jobs.length });
   } catch (error) {
     next(error);
   }
@@ -374,11 +405,17 @@ app.get("/experiment/metrics", async (_request, response, next) => {
 async function readSession(sessionId, includeSamples = true) {
   const metadata = await redis.hgetall(sessionKey(sessionId));
   if (!Object.keys(metadata).length) return null;
-  const samples = includeSamples
-    ? (await redis.lrange(sessionSamplesKey(sessionId), 0, -1)).map((value) => parseJson(value, null)).filter(Boolean)
-    : [];
+  const [rawSamples, rawJobEvents] = includeSamples
+    ? await Promise.all([
+      redis.lrange(sessionSamplesKey(sessionId), 0, -1),
+      redis.zrange(sessionJobMetricsKey(sessionId), 0, -1),
+    ])
+    : [[], []];
+  const samples = rawSamples.map((value) => parseJson(value, null)).filter(Boolean);
+  const jobEvents = rawJobEvents.map((value) => parseJson(value, null)).filter(Boolean);
   const startedAt = Number(metadata.startedAt);
   const endedAt = metadata.endedAt ? Number(metadata.endedAt) : null;
+  const submittedJobs = Number(metadata.submittedJobs ?? jobEvents.length);
   return {
     id: sessionId,
     name: metadata.name,
@@ -387,7 +424,11 @@ async function readSession(sessionId, includeSamples = true) {
     status: metadata.status,
     startedAt,
     endedAt,
-    ...(includeSamples ? { samples, summary: summarizeSession(samples, startedAt, endedAt, config.capacityCostPerWorkerMinute) } : {}),
+    ...(includeSamples ? {
+      samples,
+      jobEvents,
+      summary: summarizeSession(samples, startedAt, endedAt, config.capacityCostPerWorkerMinute, jobEvents, submittedJobs),
+    } : {}),
   };
 }
 
@@ -409,6 +450,8 @@ app.get("/experiment/sessions", async (request, response, next) => {
 
 app.post("/experiment/sessions", async (request, response, next) => {
   try {
+    const activeIds = await activeExperimentSessionIds();
+    if (activeIds.length) throw conflictError("Eksperimentalna sesija je već aktivna.");
     const id = randomUUID();
     const startedAt = Date.now();
     const metadata = {
@@ -418,6 +461,7 @@ app.post("/experiment/sessions", async (request, response, next) => {
       deploymentPolicy: config.deploymentPolicy,
       status: "active",
       startedAt,
+      submittedJobs: 0,
     };
     await redis.multi()
       .hset(sessionKey(id), ...hashArguments(metadata))

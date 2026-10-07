@@ -6,6 +6,7 @@ const baseUrl = __ENV.BASE_URL ?? "http://localhost:4000";
 const token = __ENV.BENCHMARK_TOKEN ?? "local-benchmark-token";
 const scenario = __ENV.SCENARIO ?? "low";
 const jobsPerRequest = Number(__ENV.JOBS_PER_REQUEST ?? 1);
+const experimentSessionId = __ENV.EXPERIMENT_SESSION_ID ?? "";
 
 const profiles = {
   low: {
@@ -65,9 +66,11 @@ const jobCompletionFailed = new Rate("job_completion_failed");
 
 export default function submitAndWaitForJob() {
   const startedAt = Date.now();
+  const payload = { count: jobsPerRequest, format: "webp", quality: 78, width: 1600 };
+  if (experimentSessionId) payload.experimentSessionId = experimentSessionId;
   const submit = http.post(
     `${baseUrl}/benchmark/jobs`,
-    JSON.stringify({ count: jobsPerRequest, format: "webp", quality: 78, width: 1600 }),
+    JSON.stringify(payload),
     { headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` } },
   );
   const accepted = check(submit, { "posao prihvaćen": (response) => response.status === 202 });

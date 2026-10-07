@@ -80,16 +80,33 @@ Vrijednosti su početne i konačno se zaključavaju nakon pilot-testa. Ako oba s
 
 ## 5. Postupak jednog izvođenja
 
-1. Provjeriti da aplikacija, Redis, MinIO i sistem metrika rade.
-2. Očistiti prethodne redove i eksperimentalne rezultate.
-3. Sačekati da broj worker replika dostigne početno stanje.
-4. Zabilježiti tačnu konfiguraciju, vrijeme početka i identifikator izvođenja.
-5. U prikazu Eksperiment pokrenuti sesiju i upisati isti naziv profila koji će koristiti k6.
-6. Pokrenuti jedan k6 profil.
-7. Nastaviti prikupljanje metrika dok red ne bude prazan i svi poslovi ne završe.
-8. Zaustaviti sesiju i sačuvati njen JSON i CSV export.
-9. Sačuvati k6 JSON, Prometheus podatke, broj replika i logove grešaka.
-10. Ostaviti period hlađenja prije narednog izvođenja.
+Jedno izvođenje pokreće automatizovani runner:
+
+```bash
+SCENARIO=ramp \
+EXPECTED_POLICY=QUEUE_KEDA \
+EXPECTED_INITIAL_WORKERS=1 \
+REPETITION=1 \
+BASE_URL=http://SERVER_IP:4000 \
+BENCHMARK_TOKEN=replace-before-public-deployment \
+KUBECTL_NAMESPACE=media-dynamic \
+pnpm run:experiment
+```
+
+Runner izvršava sljedeći postupak:
+
+1. Provjerava dostupnost k6, aplikacije i opcionalno kubectl-a.
+2. Odbija izvođenje ako red nije prazan, posao je aktivan ili postoji aktivna eksperimentalna sesija.
+3. Provjerava aktivnu politiku i, ako je zadan, početni broj worker replika.
+4. Bilježi Git reviziju, konfiguraciju, vrijeme početka i početne metrike.
+5. Pokreće sesiju i k6 profil s eksplicitnim `EXPERIMENT_SESSION_ID`.
+6. Prikuplja metrike dok red, aktivni i nedovršeni poslovi ne dostignu nulu.
+7. Zaustavlja sesiju i čuva JSON i CSV export.
+8. Čuva k6 rezultat, Prometheus podatke te opcionalno Kubernetes stanje i logove.
+9. Upisuje završni status i razlog greške u `manifest.json`.
+10. Ostavlja period hlađenja prije narednog izvođenja.
+
+Runner podrazumijevano zahtijeva čisto Git stablo. `ALLOW_DIRTY=1` koristi se samo tokom pilot-testa. Artefakti se čuvaju pod `results/<run-id>/`, koji Git ne prati.
 
 Svaki profil se izvodi najmanje pet puta po politici. Redoslijed S0, S1 i S2 se randomizira ili koristi uravnotežen raspored kako redoslijed izvođenja ne bi bio povezan s jednom politikom.
 
@@ -111,7 +128,7 @@ Za svako izvođenje sačuvati:
 | vrijeme scale-up reakcije | s |
 | obrađeni ulazni i izlazni podaci | bajtovi |
 
-JSON export je primarni zapis sesije jer sadrži metapodatke, sve periodične uzorke i završni sažetak. CSV sadrži vremensku seriju i koristi se za tabelarnu analizu. Export treba arhivirati zajedno s k6 rezultatom i oznakom image verzije.
+JSON export je primarni zapis sesije jer sadrži metapodatke, sve periodične uzorke, sirove job događaje i završni sažetak. CSV sadrži vremensku seriju i koristi se za tabelarnu analizu. Obrt, obrada, čekanje, P95, stopa grešaka i volumeni računaju se samo iz job događaja vezanih za konkretnu sesiju. Export treba arhivirati zajedno s k6 rezultatom i oznakom image verzije.
 
 ## 7. Analiza
 

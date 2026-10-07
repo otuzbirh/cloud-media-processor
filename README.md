@@ -73,6 +73,8 @@ Batch i eksperimentalni podaci se podrazumijevano čuvaju sedam dana. Retencija 
 
 Sesija se pokreće iz prikaza Eksperiment uz naziv i profil opterećenja. API periodično čuva dužinu reda, aktivne workere, throughput, latencije, CPU/memorijsku potrošnju i alocirani kapacitet. Sažetak računa promjene replika, scale-up reakciju, poslove po worker-minuti te CPU-request i memorija-request minute. Nakon zaustavljanja dostupni su JSON i CSV export.
 
+Benchmark poslovi se vežu za aktivnu eksperimentalnu sesiju. Ako je aktivna tačno jedna sesija, API je bira automatski. Za automatizovana izvođenja preporučeno je eksplicitno poslati `experimentSessionId`. JSON export sadrži periodične uzorke i sirove job događaje te sesije. Obrt, obrada, čekanje, P95, stopa grešaka i volumeni računaju se samo iz tih događaja, a ne iz rolling metrika prethodnih izvođenja.
+
 `workerMinutes` se računa kao vremenski integral broja aktivnih workera. Polje `estimatedAllocatedCapacityCost` postoji samo ako je konfigurisan `WORKER_CAPACITY_COST_PER_MINUTE`; bez provjerljive jedinične stope interfejs prikazuje da stopa nije postavljena. Ova vrijednost se naziva **procijenjeni trošak alociranog kapaciteta**, ne stvarno smanjenje cloud računa.
 
 Ključne varijable okruženja:
@@ -135,14 +137,23 @@ Zajednička Kubernetes baza sadrži identične image verzije, requeste, limite i
 
 ## Test opterećenja
 
-Podržani profili su `low`, `high`, `ramp` i `spike`:
+Komanda `run:experiment` automatizuje preflight provjere, sesiju, k6, pražnjenje reda i arhiviranje artefakata. Podržani profili su `low`, `high`, `ramp` i `spike`:
 
 ```bash
 SCENARIO=ramp \
 BASE_URL=http://SERVER_IP:4000 \
 BENCHMARK_TOKEN=replace-before-public-deployment \
-k6 run --summary-export=results/ramp-run-01.json tests/load/experiment.js
+EXPECTED_POLICY=QUEUE_KEDA \
+EXPECTED_INITIAL_WORKERS=1 \
+REPETITION=1 \
+KUBECTL_NAMESPACE=media-dynamic \
+WORKER_METRICS_URL=http://WORKER_METRICS_IP:9091/metrics \
+pnpm run:experiment
 ```
+
+Runner odbija zauzet red, aktivnu sesiju, pogrešnu politiku, pogrešan početni broj workera i nečisto Git stablo. `ALLOW_DIRTY=1` je dozvoljen samo za pilot-test. Zadane vrijednosti su: provjera reda svake 2 s, drain timeout 30 min i cooldown 60 s.
+
+Svako izvođenje dobija direktorij `results/<vrijeme>_<politika>_<profil>_r<ponavljanje>/`. Sadrži manifest, k6 log i sažetak, JSON/CSV export sesije, početne i završne metrike, drain opažanja te opcionalno Kubernetes stanje i logove. Git ne prati `results/`; arhivirajte ga odvojeno uz podatke rada.
 
 Svaki profil treba ponoviti najmanje pet puta za sva tri scenarija. Redoslijed S0, S1 i S2 izvođenja treba randomizirati između ponavljanja.
 
@@ -161,5 +172,6 @@ infra/k8s/cpu/          CPU HPA skaliranje od jedne do šest replika
 infra/k8s/dynamic/      queue/KEDA skaliranje od jedne do šest replika
 tests/load/             k6 profili opterećenja
 tests/unit/             image, polling, validacija i metrički testovi
+scripts/run-experiment.mjs automatizovano eksperimentalno izvođenje
 docs/                   eksperimentalna dokumentacija
 ```
