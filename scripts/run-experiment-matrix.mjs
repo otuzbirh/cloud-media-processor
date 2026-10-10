@@ -7,6 +7,7 @@ import {
   POLICY_CONFIG,
   completedScheduleKeys,
   createExperimentSchedule,
+  isInitialWorkerBaseline,
   selectPendingSchedule,
 } from "../lib/experiment-matrix.mjs";
 import { nonNegativeInteger, positiveInteger } from "../lib/experiment-runner.mjs";
@@ -20,6 +21,16 @@ const repetitions = positiveInteger(process.env.EXPECTED_REPETITIONS, 5, "EXPECT
 const startSequence = positiveInteger(process.env.START_SEQUENCE, 1, "START_SEQUENCE");
 const endSequence = positiveInteger(process.env.END_SEQUENCE, repetitions * 12, "END_SEQUENCE");
 const cooldownSeconds = nonNegativeInteger(process.env.COOLDOWN_SECONDS, 60, "COOLDOWN_SECONDS");
+const initialWorkersTimeoutSeconds = positiveInteger(
+  process.env.INITIAL_WORKERS_TIMEOUT_SECONDS,
+  600,
+  "INITIAL_WORKERS_TIMEOUT_SECONDS",
+);
+const initialWorkersPollSeconds = positiveInteger(
+  process.env.INITIAL_WORKERS_POLL_SECONDS,
+  5,
+  "INITIAL_WORKERS_POLL_SECONDS",
+);
 const execute = process.env.EXECUTE_MATRIX === "1";
 const knownNamespaces = MATRIX_POLICIES.map((policy) => POLICY_CONFIG[policy].namespace);
 const PLAN_COLUMNS = [
@@ -118,6 +129,33 @@ function waitForHttp(baseUrl, timeoutMs = 180_000) {
     command("sleep", ["2"]);
   }
   throw new Error(`API nije postao dostupan na ${baseUrl}/health unutar ${timeoutMs} ms.`);
+}
+
+function waitForInitialWorkerBaseline(baseUrl, expectedWorkers) {
+  const deadline = Date.now() + initialWorkersTimeoutSeconds * 1_000;
+  let lastState = "metrike nisu dostupne";
+  process.stdout.write(`Čekanje početnog stanja: ${expectedWorkers} worker(a), prazan red i bez aktivnih poslova.\n`);
+  while (Date.now() < deadline) {
+    const result = command("curl", ["-fsS", "--max-time", "5", `${baseUrl}/experiment/metrics`]);
+    if (result.status === 0) {
+      try {
+        const metrics = JSON.parse(result.stdout);
+        lastState = `workers=${metrics.activeWorkers}, queue=${metrics.queueLength}, active=${metrics.activeJobs}`;
+        if (isInitialWorkerBaseline(metrics, expectedWorkers)) {
+          process.stdout.write(`Početno stanje spremno: ${lastState}.\n`);
+          return;
+        }
+      } catch {
+        lastState = "odgovor metrika nije validan JSON";
+      }
+    } else {
+      lastState = (result.stderr || result.stdout || "metrike nisu dostupne").trim();
+    }
+    command("sleep", [String(initialWorkersPollSeconds)]);
+  }
+  throw new Error(
+    `Početno stanje nije dostignuto unutar ${initialWorkersTimeoutSeconds} s: ${lastState}.`,
+  );
 }
 
 function applySecrets(context, namespace, secrets) {
@@ -246,6 +284,7 @@ async function main() {
       deployPolicy(context, item, runtime);
       activePolicy = item.deploymentPolicy;
     }
+    waitForInitialWorkerBaseline(runtime.baseUrl, item.expectedInitialWorkers);
     runExperiment(item, runtime);
   }
 }

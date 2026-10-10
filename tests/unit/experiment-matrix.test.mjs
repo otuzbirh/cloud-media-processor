@@ -5,6 +5,7 @@ import {
   MATRIX_SCENARIOS,
   completedScheduleKeys,
   createExperimentSchedule,
+  isInitialWorkerBaseline,
   selectPendingSchedule,
 } from "../../lib/experiment-matrix.mjs";
 
@@ -59,4 +60,11 @@ test("nastavak priznaje samo čist i potpun run iste Git revizije", () => {
   const pending = selectPendingSchedule(createExperimentSchedule(1), keys, 1, 2);
   assert.equal(pending.length, 1);
   assert.equal(pending[0].sequence, 2);
+});
+
+test("početno stanje zahtijeva očekivan broj workera i prazan sistem", () => {
+  assert.equal(isInitialWorkerBaseline({ activeWorkers: 1, queueLength: 0, activeJobs: 0 }, 1), true);
+  assert.equal(isInitialWorkerBaseline({ activeWorkers: 5, queueLength: 0, activeJobs: 0 }, 1), false);
+  assert.equal(isInitialWorkerBaseline({ activeWorkers: 1, queueLength: 2, activeJobs: 0 }, 1), false);
+  assert.equal(isInitialWorkerBaseline({ activeWorkers: 1, queueLength: 0, activeJobs: 1 }, 1), false);
 });

@@ -190,7 +190,7 @@ EXPECTED_REPETITIONS=5 \
 pnpm run:matrix
 ```
 
-Runner prije svake nove politike briše namespacee `media-static`, `media-cpu` i `media-dynamic`, primjenjuje odgovarajući overlay, postavlja iste immutable image digest vrijednosti, primjenjuje secrete i čeka readiness. Ne briše druge namespacee. Metrics Server i KEDA CRD moraju postojati. Za ograničeno izvođenje koriste se `START_SEQUENCE` i `END_SEQUENCE`; plan ostaje isti.
+Runner prije svake nove politike briše namespacee `media-static`, `media-cpu` i `media-dynamic`, primjenjuje odgovarajući overlay, postavlja iste immutable image digest vrijednosti, primjenjuje secrete i čeka readiness. Prije svakog mjerenja dodatno čeka očekivani početni broj workera, prazan red i odsustvo aktivnih poslova; time sporiji HPA scale-down ne prekida naredni run niti mijenja njegovo početno stanje. Ne briše druge namespacee. Metrics Server i KEDA CRD moraju postojati. Za ograničeno izvođenje koriste se `START_SEQUENCE` i `END_SEQUENCE`; plan ostaje isti.
 
 Kompletna matrica traje približno šest sati plus vrijeme deploymenta. Pokreće se iz stabilnog terminala na računaru koji neće preći u sleep stanje.
 

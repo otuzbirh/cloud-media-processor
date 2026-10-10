@@ -137,6 +137,8 @@ KEDA Redis trigger mora koristiti namespace-kvalifikovanu adresu servisa. Operat
 
 Prije svake promjene politike prethodni eksperimentalni namespace se briše tek nakon završenog exporta runa. Time se uklanjaju prethodni Redis redovi, MinIO objekti, sesije i autoscaler stanje. Zajednički NodePort `30080` može pripadati samo trenutno aktivnoj politici.
 
+Prije svakog pojedinačnog mjerenja runner čeka standardizovano početno stanje: očekivani broj aktivnih workera, prazan red i nijedan aktivan posao. Ovo čekanje je odvojeno od fiksnog perioda hlađenja jer CPU HPA, zbog stabilizacijskog prozora za scale-down, može trebati više vremena da se vrati na jednu repliku. Zadani timeout je 600 s, a interval provjere 5 s; mogu se eksplicitno promijeniti varijablama `INITIAL_WORKERS_TIMEOUT_SECONDS` i `INITIAL_WORKERS_POLL_SECONDS`. Mjerenje ne počinje dok početno stanje nije potvrđeno.
+
 Ako se proces prekine, ponovna komanda preskače samo validne završene runove iste Git revizije. `START_SEQUENCE` i `END_SEQUENCE` ograničavaju dio matrice bez promjene redoslijeda.
 
 ## 6. Rezultati za tabelarni prikaz
