@@ -355,9 +355,12 @@ app.get("/batches/:batchId", async (request, response, next) => {
   }
 });
 
-app.get("/files/:key", async (request, response, next) => {
+// Object keys contain a directory separator (job-id/file-name). Some reverse
+// proxies decode the encoded %2F before forwarding the request, so match the
+// complete path suffix instead of a single Express path segment.
+app.get(/^\/files\/(.+)$/, async (request, response, next) => {
   try {
-    const key = decodeURIComponent(request.params.key);
+    const key = request.params[0];
     const stream = await storage.getObject(config.minio.outputBucket, key);
     response.setHeader("Content-Disposition", `attachment; filename="${key.split("/").at(-1)}"`);
     stream.pipe(response);
