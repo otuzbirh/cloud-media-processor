@@ -45,4 +45,5 @@ next-env.d.ts
 /outputs/
 /results/
 /analysis/
+/experiment-plan/
 /work/

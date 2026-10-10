@@ -112,6 +112,31 @@ k6 samo šalje poslove prema definisanoj arrival-rate krivulji. Ne anketira stat
 
 Svaki profil se izvodi najmanje pet puta po politici. Redoslijed S0, S1 i S2 se randomizira ili koristi uravnotežen raspored kako redoslijed izvođenja ne bi bio povezan s jednom politikom.
 
+## 5.1. Konačna matrica
+
+Determinističan uravnotežen raspored generiše se komandom:
+
+```bash
+EXPECTED_REPETITIONS=5 pnpm run:matrix
+```
+
+Plan sadrži 60 jedinstvenih kombinacija i rotira početnu politiku između ponavljanja. Redoslijed profila rotira se zasebno za svaku politiku. `matrix.json` čuva tačan slijed, Git reviziju i stanje svake stavke.
+
+Konačna matrica podrazumijevano koristi `results/final`, odvojeno od lokalnih pilot-runova u `results/`. Ova izolacija je obavezna jer bi pilot s drugom Git revizijom ili nevalidnim izvođenjem namjerno oborio strogu kontrolu konačne analize.
+
+Izvršni način zahtijeva:
+
+- čist Git status;
+- eksplicitno naveden i aktivan `KUBE_CONTEXT`;
+- Metrics Server i KEDA CRD;
+- iste immutable image digest vrijednosti za sve politike;
+- eksplicitnu potvrdu resetovanja samo namespacea `media-static`, `media-cpu` i `media-dynamic`;
+- provjerljiv API URL, benchmark token i MinIO pristupne podatke.
+
+Prije svake promjene politike prethodni eksperimentalni namespace se briše tek nakon završenog exporta runa. Time se uklanjaju prethodni Redis redovi, MinIO objekti, sesije i autoscaler stanje. Zajednički NodePort `30080` može pripadati samo trenutno aktivnoj politici.
+
+Ako se proces prekine, ponovna komanda preskače samo validne završene runove iste Git revizije. `START_SEQUENCE` i `END_SEQUENCE` ograničavaju dio matrice bez promjene redoslijeda.
+
 ## 6. Rezultati za tabelarni prikaz
 
 Za svako izvođenje sačuvati:
@@ -139,6 +164,9 @@ Za svaku metriku prikazati srednju vrijednost, medijan, standardnu devijaciju i 
 Skupovi podataka generišu se iz arhiviranih runova:
 
 ```bash
+RESULTS_DIR=results/final \
+ANALYSIS_DIR=analysis/final \
+STRICT_ANALYSIS=1 \
 EXPECTED_REPETITIONS=5 pnpm analyze:experiments
 ```
 

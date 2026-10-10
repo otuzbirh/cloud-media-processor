@@ -15,6 +15,7 @@
     "start:api": "node services/api/index.mjs",
     "start:worker": "node services/worker/index.mjs",
     "run:experiment": "node scripts/run-experiment.mjs",
+    "run:matrix": "node scripts/run-experiment-matrix.mjs",
     "analyze:experiments": "node scripts/analyze-experiments.mjs",
     "test:unit": "node --test tests/unit/*.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",

@@ -161,14 +161,46 @@ Detaljan postupak nalazi se u [eksperimentalnom protokolu](docs/experiment-proto
 
 Nalazi lokalnog kalibracijskog izvođenja nalaze se u [rezultatima pilot-testa](docs/pilot-results.md).
 
+## Konačna eksperimentalna matrica
+
+Plan od 60 runova generiše se bez promjene klastera:
+
+```bash
+EXPECTED_REPETITIONS=5 pnpm run:matrix
+```
+
+Plan se čuva u `experiment-plan/matrix.json` i `experiment-plan/matrix.csv`. Politike i profili rotiraju se između ponavljanja. Nastavak nakon prekida priznaje samo završene runove iste Git revizije, čistog radnog stabla, bez failed/incomplete poslova i bez odbačenih k6 iteracija.
+
+Stvarno izvođenje zahtijeva eksplicitnu potvrdu destruktivne pripreme namespacea:
+
+```bash
+EXECUTE_MATRIX=1 \
+KUBE_CONTEXT=production-experiment \
+CONFIRM_NAMESPACE_RESET=media-static,media-cpu,media-dynamic \
+BASE_URL=http://NODE_IP:30080/api \
+BENCHMARK_TOKEN='strong-benchmark-token' \
+MINIO_ACCESS_KEY='mediaadmin' \
+MINIO_SECRET_KEY='strong-minio-secret' \
+SERVICE_IMAGE='registry.example/cloud-media-service@sha256:...' \
+WEB_IMAGE='registry.example/cloud-media-web@sha256:...' \
+RESULTS_DIR=results/final \
+EXPECTED_REPETITIONS=5 \
+pnpm run:matrix
+```
+
+Runner prije svake nove politike briše namespacee `media-static`, `media-cpu` i `media-dynamic`, primjenjuje odgovarajući overlay, postavlja iste immutable image digest vrijednosti, primjenjuje secrete i čeka readiness. Ne briše druge namespacee. Metrics Server i KEDA CRD moraju postojati. Za ograničeno izvođenje koriste se `START_SEQUENCE` i `END_SEQUENCE`; plan ostaje isti.
+
+Kompletna matrica traje približno šest sati plus vrijeme deploymenta. Pokreće se iz stabilnog terminala na računaru koji neće preći u sleep stanje.
+
 ## Analiza eksperimentalnih rezultata
 
 Nakon izvođenja kompletne matrice generišite skupove podataka za analizu:
 
 ```bash
 EXPECTED_REPETITIONS=5 \
-RESULTS_DIR=results \
-ANALYSIS_DIR=analysis \
+RESULTS_DIR=results/final \
+ANALYSIS_DIR=analysis/final \
+STRICT_ANALYSIS=1 \
 pnpm analyze:experiments
 ```
 
@@ -197,6 +229,7 @@ infra/k8s/dynamic/      queue/KEDA skaliranje od jedne do šest replika
 tests/load/             k6 profili opterećenja
 tests/unit/             image, polling, validacija i metrički testovi
 scripts/run-experiment.mjs automatizovano eksperimentalno izvođenje
+scripts/run-experiment-matrix.mjs balansirani Kubernetes raspored
 scripts/analyze-experiments.mjs agregacija i kontrola rezultata
 docs/                   eksperimentalna dokumentacija
 ```
