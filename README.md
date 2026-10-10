@@ -155,11 +155,13 @@ Runner odbija zauzet red, aktivnu sesiju, pogrešnu politiku, pogrešan početni
 
 Svako izvođenje dobija direktorij `results/<vrijeme>_<politika>_<profil>_r<ponavljanje>/`. Sadrži manifest, k6 log i sažetak, JSON/CSV export sesije, početne i završne metrike, drain opažanja te opcionalno Kubernetes stanje i logove. Git ne prati `results/`; arhivirajte ga odvojeno uz podatke rada.
 
-Svaki profil treba ponoviti najmanje pet puta za sva tri scenarija. Redoslijed S0, S1 i S2 izvođenja treba randomizirati između ponavljanja.
+Svaki profil treba ponoviti najmanje pet puta za sve tri politike. Redoslijed S0, S1 i S2 izvođenja treba uravnotežiti između ponavljanja.
 
 Detaljan postupak nalazi se u [eksperimentalnom protokolu](docs/experiment-protocol.md).
 
 Nalazi lokalnog kalibracijskog izvođenja nalaze se u [rezultatima pilot-testa](docs/pilot-results.md).
+
+Provjera sve tri politike na lokalnom Kubernetes klasteru dokumentovana je u [rezultatima Kubernetes smoke-testa](docs/kubernetes-smoke-results.md). Ti runovi služe samo za provjeru deploymenta, Metrics Servera, HPA i KEDA integracije; nisu dio konačnog skupa od 60 izvođenja.
 
 ## Konačna eksperimentalna matrica
 

@@ -23,7 +23,7 @@ spec:
   triggers:
     - type: redis
       metadata:
-        address: redis:6379
+        address: redis.media-dynamic.svc.cluster.local:6379
         listName: media-processing:pending
         listLength: "5"
         activationListLength: "1"

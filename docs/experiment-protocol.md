@@ -133,6 +133,8 @@ Izvršni način zahtijeva:
 - eksplicitnu potvrdu resetovanja samo namespacea `media-static`, `media-cpu` i `media-dynamic`;
 - provjerljiv API URL, benchmark token i MinIO pristupne podatke.
 
+KEDA Redis trigger mora koristiti namespace-kvalifikovanu adresu servisa. Operator se izvršava u `keda` namespaceu, pa kratka adresa `redis:6379` ne razrješava servis eksperimentalnog namespacea. Overlay `QUEUE_KEDA` zato koristi `redis.media-dynamic.svc.cluster.local:6379`.
+
 Prije svake promjene politike prethodni eksperimentalni namespace se briše tek nakon završenog exporta runa. Time se uklanjaju prethodni Redis redovi, MinIO objekti, sesije i autoscaler stanje. Zajednički NodePort `30080` može pripadati samo trenutno aktivnoj politici.
 
 Ako se proces prekine, ponovna komanda preskače samo validne završene runove iste Git revizije. `START_SEQUENCE` i `END_SEQUENCE` ograničavaju dio matrice bez promjene redoslijeda.
