@@ -41,7 +41,24 @@ test("CLI generiše skupove podataka iz validnog izvođenja", async (context) =>
   };
   const session = {
     startedAt: Date.parse(manifest.startedAt),
-    samples: [{ timestamp: Date.parse(manifest.startedAt) + 5_000, activeWorkers: 6, queueLength: 2 }],
+    jobEvents: [{
+      status: "completed",
+      finishedAt: Date.parse(manifest.startedAt) + 4_000,
+      processingMs: 400,
+      queueWaitMs: 50,
+      turnaroundMs: 450,
+      outputBytes: 1024,
+    }],
+    samples: [{
+      timestamp: Date.parse(manifest.startedAt) + 5_000,
+      activeWorkers: 6,
+      queueLength: 2,
+      completedJobs: 99,
+      maximumQueueWaitMs: 750,
+      averageTurnaroundMs: 800,
+      medianTurnaroundMs: 790,
+      p95TurnaroundMs: 900,
+    }],
   };
   await Promise.all([
     writeFile(join(runDirectory, "manifest.json"), JSON.stringify(manifest), "utf8"),
@@ -63,5 +80,15 @@ test("CLI generiše skupove podataka iz validnog izvođenja", async (context) =>
   assert.equal(report.validRunCount, 1);
   assert.equal(report.runs[0].averageThroughput, 10);
   assert.match(await readFile(join(analysisDirectory, "runs.csv"), "utf8"), /run-1/);
-  assert.match(await readFile(join(analysisDirectory, "timeseries.csv"), "utf8"), /run-1,STATIC,low,1,5/);
+  const timeSeries = await readFile(join(analysisDirectory, "timeseries.csv"), "utf8");
+  assert.match(timeSeries, /run-1,STATIC,low,1,5/);
+  assert.match(timeSeries, /maximumQueueWaitMs,averageTurnaroundMs,medianTurnaroundMs,p95TurnaroundMs/);
+  const [header, firstRow] = timeSeries.trim().split("\n").map((line) => line.split(","));
+  const value = (column) => firstRow[header.indexOf(column)];
+  assert.equal(value("completedJobs"), "1");
+  assert.equal(value("maximumQueueWaitMs"), "50");
+  assert.equal(value("averageTurnaroundMs"), "450");
+  assert.equal(value("medianTurnaroundMs"), "450");
+  assert.equal(value("p95TurnaroundMs"), "450");
+  assert.equal(value("processedBytes"), "1024");
 });

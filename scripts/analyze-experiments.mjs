@@ -7,6 +7,9 @@ import {
   coverageReport,
   flattenManifest,
   manifestProblems,
+  mean,
+  median,
+  percentile,
   summarizeRuns,
   toCsv,
 } from "../lib/experiment-analysis.mjs";
@@ -30,6 +33,10 @@ const TIME_SERIES_FIELDS = [
   "medianProcessingMs",
   "p95ProcessingMs",
   "averageQueueWaitMs",
+  "maximumQueueWaitMs",
+  "averageTurnaroundMs",
+  "medianTurnaroundMs",
+  "p95TurnaroundMs",
   "averageWorkerCpuPercent",
   "averageWorkerMemoryBytes",
   "allocatedCpuCores",
@@ -83,18 +90,44 @@ async function readTimeSeries(runRecord, warnings) {
     warnings.push({ runId: runRecord.manifest.runId, artifact: "session-export.json", reason: "Nedostaje samples niz." });
     return [];
   }
+  if (!Array.isArray(session.jobEvents)) {
+    warnings.push({ runId: runRecord.manifest.runId, artifact: "session-export.json", reason: "Nedostaje jobEvents niz." });
+    return [];
+  }
   const startedAt = Number(session.startedAt ?? new Date(runRecord.manifest.startedAt).getTime());
   return session.samples.map((sample) => {
+    const timestamp = Number(sample.timestamp);
+    const finishedEvents = session.jobEvents.filter((event) => Number(event.finishedAt) <= timestamp);
+    const completedEvents = finishedEvents.filter((event) => event.status === "completed");
+    const failedEvents = finishedEvents.filter((event) => event.status === "failed");
+    const recentCompletedEvents = completedEvents.filter((event) => Number(event.finishedAt) > timestamp - 60_000);
+    const processingValues = completedEvents.map((event) => event.processingMs);
+    const queueWaitValues = completedEvents.map((event) => event.queueWaitMs);
+    const turnaroundValues = completedEvents.map((event) => event.turnaroundMs);
+    const sessionFields = {
+      throughputLast60Seconds: recentCompletedEvents.length,
+      averageProcessingMs: mean(processingValues) ?? 0,
+      medianProcessingMs: median(processingValues) ?? 0,
+      p95ProcessingMs: percentile(processingValues, 95) ?? 0,
+      averageQueueWaitMs: mean(queueWaitValues) ?? 0,
+      maximumQueueWaitMs: queueWaitValues.length ? Math.max(...queueWaitValues) : 0,
+      averageTurnaroundMs: mean(turnaroundValues) ?? 0,
+      medianTurnaroundMs: median(turnaroundValues) ?? 0,
+      p95TurnaroundMs: percentile(turnaroundValues, 95) ?? 0,
+      completedJobs: completedEvents.length,
+      failedJobs: failedEvents.length,
+      processedBytes: completedEvents.reduce((sum, event) => sum + (Number(event.outputBytes) || 0), 0),
+    };
     const row = {
       runId: runRecord.manifest.runId,
       deploymentPolicy: runRecord.manifest.deploymentPolicy,
       scenario: runRecord.manifest.scenario,
       repetition: runRecord.manifest.repetition,
-      elapsedSeconds: Number.isFinite(startedAt) && Number.isFinite(sample.timestamp)
-        ? (sample.timestamp - startedAt) / 1000
+      elapsedSeconds: Number.isFinite(startedAt) && Number.isFinite(timestamp)
+        ? (timestamp - startedAt) / 1000
         : null,
     };
-    for (const field of TIME_SERIES_FIELDS) row[field] = sample[field] ?? null;
+    for (const field of TIME_SERIES_FIELDS) row[field] = sessionFields[field] ?? sample[field] ?? null;
     return row;
   });
 }
